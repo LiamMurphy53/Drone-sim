@@ -19,8 +19,16 @@ The expanded test exposed a yaw convention mismatch in the earlier bridge. This 
 
 These checks validate code behavior and numerical consistency, not agreement with measured flight dynamics. Neither aircraft is hardware-validated. DJI inertia, CG, motor layout, thrust/torque, response time and aerodynamic coefficients are estimates; DJI firmware/assisted flight modes are not reproduced. Sources and assumptions are recorded in [AIRCRAFT_MODELS.md](docs/AIRCRAFT_MODELS.md) and [PHYSICS.md](docs/PHYSICS.md).
 
-A physical RadioMaster Pocket connection and its axis/button enumeration on this Mac still need a first plugged-in calibration and flight check. The MATLAB project remains in `matlab_sim/`; its full test suite was not rerun as part of the native simulator work.
+A physical RadioMaster Pocket is now detected and its live stick inputs are confirmed (see the follow-up below). Channel calibration and a physical-radio flight check remain required. The MATLAB project remains in `matlab_sim/`; its full test suite was not rerun as part of the native simulator work.
 
 ## Native UI and relocation
 
 The simulator launched successfully from `Desktop/Github/Drone-sim`. The native window was inspected with both selector entries, the DJI approximation label, remembered selection after restart, and the DJI procedural model in chase view. The launch-pad markings were flattened to match the ground plane for the shorter DJI landing footprint. Source, model data, tests, documentation and the MATLAB project are tracked; downloaded engines, compiled dependencies, caches and local runtime files are excluded from Git.
+
+## Pocket connection follow-up
+
+macOS detected USB vendor 0x1209 / product 0x4f54 as Radiomaster Pocket Joystick, while the original Godot 4.4.1 engine returned an empty controller list even after restarting. Godot 4.5.2, whose desktop input uses SDL, detected `EdgeTX Radiomaster Pocket Joystick`; the user confirmed that moving the physical sticks changes the simulator's raw input values. The official macOS engine archive was verified against its release SHA-256 before installation. Previous local engines were retained as backups.
+
+The setup script now pins and upgrades to 4.5.2. The simulator rescans after startup and periodically, and provides a manual rescan button that disarms. All 15 legacy physics and 33 dynamics checks passed again on 4.5.2. The earlier live Betaflight and profile tests above were run on 4.4.1; they were not rerun as part of this controller-detection fix. Physical channel mapping and flight are not yet claimed as validated.
+
+References: [Godot desktop controller support](https://docs.godotengine.org/en/stable/tutorials/inputs/controllers_gamepads_joysticks.html), [Godot 4.5.2 release](https://github.com/godotengine/godot-builds/releases/tag/4.5.2-stable).

@@ -24,7 +24,7 @@ const PROMPTS := ["Center roll, pitch and yaw. Put throttle fully DOWN. Then cap
 func _init() -> void:
 	refresh_device()
 
-func refresh_device() -> void:
+func refresh_device() -> bool:
 	var old := device
 	var old_name := device_name
 	var devices := Input.get_connected_joypads()
@@ -50,6 +50,8 @@ func refresh_device() -> void:
 				mapping = saved.get("mapping", {})
 				action_bindings = saved.get("actions", {})
 				calibrated = mapping.size() == 4
+		return true
+	return false
 
 func raw_axes() -> Array[float]:
 	var result: Array[float] = []

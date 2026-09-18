@@ -2,10 +2,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p .tools vendor runtime
-if [[ ! -x .tools/Godot.app/Contents/MacOS/Godot ]]; then
-  curl -fL --retry 2 -o .tools/godot.zip 'https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_macos.universal.zip'
-  echo '6c670596d21afb7917c739d0b85b10b4ac6a44051ffa2a672f90bc7da5062864  .tools/godot.zip' | shasum -a 256 -c -
-  unzip -q .tools/godot.zip -d .tools
+if [[ ! -x .tools/Godot.app/Contents/MacOS/Godot ]] || [[ "$(.tools/Godot.app/Contents/MacOS/Godot --version)" != 4.5.2.* ]]; then
+  # 4.5+ uses SDL on macOS, including generic EdgeTX USB joysticks.
+  godot_stage=$(mktemp -d .tools/godot-install.XXXXXX)
+  trap 'rm -rf "$godot_stage"' EXIT
+  curl -fL --retry 2 -o "$godot_stage/godot.zip" 'https://github.com/godotengine/godot-builds/releases/download/4.5.2-stable/Godot_v4.5.2-stable_macos.universal.zip'
+  echo "2a3f35cf5813b0d26e3f4c15dabc5e7c58407fceec7bae5291740772f72d141a  $godot_stage/godot.zip" | shasum -a 256 -c -
+  unzip -q "$godot_stage/godot.zip" -d "$godot_stage"
+  if [[ -d .tools/Godot.app ]]; then
+    mv .tools/Godot.app ".tools/Godot-backup-$(date +%s)-$$.app"
+  fi
+  mv "$godot_stage/Godot.app" .tools/Godot.app
+  mv "$godot_stage/godot.zip" .tools/godot.zip
+  rmdir "$godot_stage"
+  trap - EXIT
 fi
 if [[ ! -d vendor/betaflight-4.5.2 ]]; then
   curl -fL --retry 2 -o .tools/betaflight.tar.gz 'https://github.com/betaflight/betaflight/archive/refs/tags/4.5.2.tar.gz'

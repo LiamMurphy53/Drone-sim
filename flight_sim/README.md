@@ -1,6 +1,6 @@
 # Flight Lab
 
-A native macOS flight simulator using **Godot 4.4.1** and a local **Betaflight 4.5.2 SITL** process. Both programs run locally; there is no server or account.
+A native macOS flight simulator using **Godot 4.5.2** and a local **Betaflight 4.5.2 SITL** process. Both programs run locally; there is no server or account.
 
 ## Start flying
 
@@ -14,7 +14,9 @@ Use the **DRONE** selector at the top left to choose **GoPro Drone** or **DJI FP
 4. Return to flight, lower throttle fully, wait for Betaflight's startup checks, and press **Space** or toggle the bound arm switch.
 5. Raise throttle gradually. This is **acro/rate mode**: centered sticks stop rotation; they do not level the aircraft or stop its travel.
 
-Calibration is saved per reported device name in Godot's application user-data folder. Recalibrate after changing the Pocket's channel setup. The physical Pocket still needs a first plugged-in calibration and flight check on this Mac.
+Calibration is saved per reported device name in Godot's application user-data folder. Recalibrate after changing the Pocket's channel setup. Pocket detection and changing stick inputs have been verified on this Mac. Complete the guided calibration before flying; a calibrated physical-radio flight check is still required.
+
+The engine must be **Godot 4.5 or newer** for the SDL controller path used here. Earlier versions can miss a generic EdgeTX USB joystick even when macOS detects it. The pinned setup script installs 4.5.2 and upgrades an older local engine. Controller detection is rescanned after startup and periodically; **Rescan USB controllers** also retries manually and disarms. If macOS cannot see the radio at all, reconnect with the Mac unlocked, allow the accessory if prompted, and verify the data cable/top USB port before calibrating.
 
 No radio connected? Select **Keyboard practice**. W/S increases/decreases throttle; arrow keys control pitch and roll; A/D controls yaw. Keyboard throttle holds its value when released.
 

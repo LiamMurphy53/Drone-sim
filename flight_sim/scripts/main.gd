@@ -58,6 +58,7 @@ func _ready() -> void:
 	if link.bind_error != OK:
 		message("Another simulator is using the motor port. Close it and relaunch.")
 	Input.joy_connection_changed.connect(_joy_changed)
+	call_deferred("rescan_controller")
 	rate_start = Time.get_ticks_msec()
 
 func build_drone() -> void:
@@ -168,6 +169,7 @@ func _process(dt: float) -> void:
 	telemetry.text = "GATE  %02d / 05     CIRCUITS  %02d\nTHROTTLE  %03d%%    %s\nFL %.0f%%   FR %.0f%%   RL %.0f%%   RR %.0f%%" % [next_gate+1,laps,controls.throttle*100,"CHASE" if chase else "FPV",link.motors[0]*100,link.motors[1]*100,link.motors[2]*100,link.motors[3]*100]
 	var now := Time.get_ticks_msec()
 	if now-rate_start > 1000:
+		if pilot.refresh_device(): arm_request = false
 		sim_rate_label.text = "%d FPS   ·   %.0f Hz PHYSICS   ·   BETAFLIGHT 4.5.2" % [Engine.get_frames_per_second(),rate_steps*1000.0/(now-rate_start)]
 		rate_steps = 0
 		rate_start = now
@@ -251,6 +253,17 @@ func _joy_changed(_device: int, _connected: bool) -> void:
 	arm_request = false
 	pilot.refresh_device()
 	message("Controller changed. Verify calibration before arming.")
+
+func rescan_controller() -> void:
+	arm_request = false
+	pilot.refresh_device()
+	var names: Array[String] = []
+	for id in Input.get_connected_joypads(): names.append(Input.get_joy_name(id))
+	print("Controller scan: ",names)
+	if pilot.device < 0:
+		message("No USB radio detected by the simulator. Check the data cable and USB Joystick mode.")
+	else:
+		message(pilot.device_name + " connected. Calibrate before flying.")
 
 func message(text: String) -> void:
 	notice = text
@@ -373,6 +386,7 @@ func build_ui() -> void:
 		pilot.calibration_message = ""
 	)
 	box.add_child(input_select)
+	box.add_child(button("Rescan USB controllers",rescan_controller))
 	capture_button = button("Calibrate Pocket",func():
 		arm_request = false
 		pilot.radio_mode = true
