@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT/'vendor/betaflight-4.5.2/obj/main/betaflight_SITL.elf'
 RUNTIME = ROOT/'runtime'
-CONFIG_MARKER = RUNTIME/'configured-v4'
+CONFIG_MARKER = RUNTIME/'configured-v5'
 
 def configure():
     RUNTIME.mkdir(exist_ok=True)
@@ -37,10 +37,12 @@ def configure():
                 commands = [
                     'set craft_name = Deadcat Lab', 'mixer QUADX', 'map AETR1234',
                     'feature -GPS', 'feature -TELEMETRY',
-                    # Coast at zero throttle: no motor authority or retained I
-                    # correction while the pilot has cut power.
-                    'feature -AIRMODE', 'feature MOTOR_STOP', 'feature -ANTI_GRAVITY',
-                    'set pid_at_min_throttle = OFF', 'set min_check = 1010',
+                    # At zero throttle, stick deflection permits steering power;
+                    # centered sticks permit none. Low throttle still resets I.
+                    'feature -AIRMODE', 'feature -MOTOR_STOP', 'feature -ANTI_GRAVITY',
+                    'set pid_at_min_throttle = ON', 'set min_check = 1010',
+                    'set mixer_type = EZLANDING', 'set ez_landing_limit = 0',
+                    'set ez_landing_threshold = 100', 'set ez_landing_speed = 0',
                     'set motor_pwm_protocol = PWM', 'set motor_pwm_rate = 480',
                     'set min_command = 1000', 'set min_throttle = 1000', 'set max_throttle = 2000',
                     'set pid_process_denom = 1', 'set gyro_calib_duration = 50',
@@ -65,7 +67,7 @@ def configure():
                     if 'ERROR' in response or 'Invalid' in response:
                         raise RuntimeError('SITL rejected '+cmd+': '+response)
                 (RUNTIME/'configuration.txt').write_text(transcript)
-            CONFIG_MARKER.write_text('Betaflight 4.5.2; Acro with motor cutoff, no AirMode or throttle boosts; local simulation only\n')
+            CONFIG_MARKER.write_text('Betaflight 4.5.2; stick-driven zero-throttle steering and centered-stick coast; local simulation only\n')
         finally:
             if proc.poll() is None:
                 proc.terminate()

@@ -1,5 +1,5 @@
 extends SceneTree
-## Native Betaflight regression for Acro with zero-throttle motor cutoff.
+## Native Betaflight regression for centered-stick coast and power return.
 ## The reference plant follows the same physical state with zero motor commands.
 const Aircraft = preload("res://scripts/aircraft.gd")
 const Link = preload("res://scripts/betaflight.gd")
@@ -37,7 +37,7 @@ func _initialize() -> void:
 		cruise = .46
 	link = Link.new()
 	Engine.max_fps = int(arguments[1]) if arguments.size() > 1 else 60
-	print("Motor-cutoff test: ", aircraft.cfg.name, " at ", Engine.max_fps, " FPS")
+	print("Centered-stick coast test: ", aircraft.cfg.name, " at ", Engine.max_fps, " FPS")
 
 func start_passive_reference() -> void:
 	passive = Aircraft.new(false, aircraft.profile_id)
@@ -69,10 +69,8 @@ func _physics_process(dt: float) -> bool:
 	if coasting:
 		# Exercise exactly zero, the cutoff boundary, and endpoint jitter.
 		controls.throttle = 0.0 if elapsed < 13.5 else (.01 if elapsed < 14.5 else .005)
-		# Deflected attitude sticks must not turn motors on while coasting.
-		controls.roll = .5
-		controls.pitch = -.4
-		controls.yaw = .35
+		# Centered attitude sticks coast; zero-throttle steering is exercised
+		# separately in test_steering.gd, including all six stick directions.
 		if not was_coasting: start_passive_reference()
 	if elapsed >= 25.5 and elapsed < 25.75: controls.roll = .15
 	link.update(aircraft, controls, arm, dt)
@@ -107,8 +105,8 @@ func _physics_process(dt: float) -> bool:
 		check(not lost_connection, "Continuous controller connection")
 		check(not unexpected_disarm, "Throttle cutoff keeps the armed state")
 		check(not aircraft.crashed and minimum_altitude > 1, "Flight remains airborne without contact")
-		check(coast_intervals == 2 and off_command_peak == 0.0, "Zero throttle cuts all motor commands immediately, including jitter and stick deflection")
-		check(off_raw_peak < .000001, "Betaflight itself stops motors while throttle is off")
+		check(coast_intervals == 2 and off_command_peak == 0.0, "Zero throttle with centered sticks cuts commands immediately, including endpoint jitter")
+		check(off_raw_peak < .000001, "Betaflight itself stops motors with throttle off and sticks centered")
 		check(residual_thrust < .0001, "Rotors coast down without sustained thrust")
 		check(passive_error < .00001 and passive_attitude_matches, "Throttle-off motion matches an uncontrolled physical coast")
 		check(coast_travel > 1, "Coasting preserves free motion instead of freezing the drone")
@@ -116,7 +114,7 @@ func _physics_process(dt: float) -> bool:
 		check(powered_roll > .01, "Powered steering resumes after throttle is restored")
 		check(recovery_rate < .2, "Rotation settles after powered steering")
 		check(not link.armed, "Disarms on request")
-		print("Motor-cutoff test failures: ",failures)
+		print("Centered-stick coast test failures: ",failures)
 		link.close()
 		quit(1 if failures else 0)
 	return false

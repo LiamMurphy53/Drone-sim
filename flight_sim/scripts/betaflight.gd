@@ -3,11 +3,12 @@ extends RefCounted
 ## UDP 9001: uint16 count + 2 padding bytes + 16 float PWM values.
 ## UDP 9003: 18 little-endian doubles; UDP 9004: double + 16 uint16.
 const Aircraft = preload("res://scripts/aircraft.gd")
-const MOTOR_CUTOFF_THROTTLE := 0.01
+const LOW_THROTTLE := 0.01
 const POWER_RETURN_SECONDS := 0.4
 var motors := PackedFloat64Array([0, 0, 0, 0])
 var raw_motors := PackedFloat64Array([0, 0, 0, 0])
 var coasting := true
+var low_throttle := true
 var powered_time := 0.0
 var output := PacketPeerUDP.new()
 var state := PacketPeerUDP.new()
@@ -52,23 +53,26 @@ func update(aircraft, controls: Dictionary, arm_request: bool, dt: float) -> voi
 		raw_motors.fill(0)
 		armed = false
 	var throttle := clampf(float(controls.throttle), 0, 1)
-	coasting = throttle <= MOTOR_CUTOFF_THROTTLE
-	if coasting or not arm_request:
+	low_throttle = throttle <= LOW_THROTTLE
+	# Pilot already applies the calibrated stick deadband. Keep deflections
+	# intact so the FC can provide real motor torque with collective at zero.
+	coasting = low_throttle and maxf(absf(controls.roll), maxf(absf(controls.pitch), absf(controls.yaw))) < .001
+	if low_throttle or not arm_request:
 		powered_time = 0.0
 	else:
 		powered_time = minf(POWER_RETURN_SECONDS, powered_time + dt)
-	if coasting:
+	if low_throttle:
 		throttle = 0.0
 	else:
-		# Ramp only the return from motor cutoff. Send the ramp through the FC
+		# Ramp only the return from zero collective. Send the ramp through the FC
 		# so its controller sees the applied throttle, rather than masking its
 		# outputs and winding up I. Cuts always bypass this ramp immediately.
 		throttle *= smoothstep(0.0, POWER_RETURN_SECONDS, powered_time)
 	motors = raw_motors.duplicate()
-	# Honor a fresh stick cutoff immediately, even if the most recent UDP
-	# motor packet predates it. Betaflight MOTOR_STOP + pid_at_min_throttle=OFF
-	# also stops its outputs and resets I internally. Rotor coast-down remains
-	# in the physical model; do not freeze motion or clear angular momentum.
+	# Stop stale powered packets when ALL sticks return to coast. EZLANDING
+	# also yields zero native output at zero throttle/deflection and resets I.
+	# Deflected attitude sticks retain motor authority; rotor coast-down and
+	# angular momentum remain entirely in the physical model.
 	if coasting: motors.fill(0)
 	var packet := PackedByteArray()
 	packet.resize(144)

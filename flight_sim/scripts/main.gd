@@ -160,7 +160,9 @@ func _process(dt: float) -> void:
 	elif not focused:
 		state = "WINDOW INACTIVE  ·  DISARMED"
 	elif link.armed and arm_request:
-		state = "ARMED  /  COAST — MOTORS OFF" if link.coasting else "ARMED  /  ACRO"
+		state = "ARMED  /  ACRO"
+		if link.low_throttle:
+			state = "ARMED  /  COAST" if link.coasting else "ARMED  /  LOW-THROTTLE STEERING"
 	elif arm_request:
 		state = "WAITING TO ARM"
 	status_label.text = state
@@ -428,5 +430,5 @@ func build_ui() -> void:
 		tilt_label.text = "FPV camera tilt  /  %d°" % v
 	)
 	box.add_child(tilt)
-	box.add_child(label("Keyboard: W/S throttle · arrows pitch/roll · A/D yaw\nThrottle off: motors coast, no stabilization.\nThrottle on: Acro steering, no auto-leveling.",13))
+	box.add_child(label("Keyboard: W/S throttle · arrows pitch/roll · A/D yaw\nThrottle off: steer with pitch, roll, or yaw.\nCenter sticks to coast; countersteer to stop a turn.\nThrottle on: Acro steering, no auto-leveling.",13))
 	box.add_child(button("Return to flight",func(): settings.hide()))

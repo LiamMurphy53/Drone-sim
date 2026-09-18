@@ -1,6 +1,6 @@
 # Validation — 2026-09-18
 
-The current default is configuration **v4: Acro with motor cutoff**. The earlier AirMode results below describe superseded behavior; see the motor-cutoff follow-up for the current contract.
+The current default is configuration **v5: Acro with stick-driven zero-throttle steering**. The earlier AirMode and unconditional motor-cutoff configurations are superseded; see the v5 follow-up for the current contract.
 
 Tested on this Apple M4 Mac with native arm64 Betaflight 4.5.2 and Godot 4.4.1 using the OpenGL compatibility renderer.
 
@@ -49,7 +49,7 @@ The existing 11-assertion normal-flight integration test also passed again for e
 
 As a negative control, the exact new GoPro throttle scenario was rerun at 60 FPS with the original saved controller configuration in a temporary runtime directory. It failed four assertions: staying airborne, bounded rotation, and the first two low-throttle settling windows. The v3 configuration passed the same scenario. This verifies that the regression catches the original fault; the production runtime retained v3 throughout this comparison.
 
-## Motor-cutoff follow-up (v4, current)
+## Motor-cutoff follow-up (v4, superseded)
 
 The requested behavior now explicitly gives up off-throttle stabilization. AirMode, anti-gravity, and throttle boost are off; MOTOR_STOP is on and `pid_at_min_throttle` is off. The bottom 1% of calibrated throttle sends zero to Betaflight and immediately cuts the bridge's applied motor commands, including when an older powered motor packet is still in flight. Betaflight also stops its own motor outputs and clears integral correction while throttle is low. Power returns through a 0.4-second throttle ramp, then follows the stick normally. Cuts bypass the ramp. Powered Acro rate control remains active; this is not direct stick-to-motor control.
 
@@ -58,3 +58,17 @@ The throttle regression now checks this contract instead of v3's zero-throttle s
 Both aircraft passed all 12 motor-cutoff assertions at 60 FPS/500 Hz physics on Godot 4.5.2: immediate zero commands, zero native controller outputs, natural rotor coast-down, exact passive-reference motion, continued arming, airborne flight, bounded power return, resumed powered steering, settling, and requested disarming. The GoPro's brief power-return response is still more pronounced than the DJI approximation's; the provisional mass properties, motor response, and powered tune remain subject to measurement and flight-data validation. No mass, thrust, torque, inertia, or motor-response numbers were changed for this behavior change.
 
 Both 11-assertion powered-flight direction tests and all 15 aircraft/profile/UI checks also passed (61 assertions total for this follow-up). The axis test now uses pilot RC corrections to establish upright flight during seconds 6–9, then stops them before every direction and settling check. This avoids assuming a hands-off launch from the asymmetric GoPro frame with the reduced assistance. The application does not include this test pilot. Script syntax and Git whitespace checks passed; Pocket calibration and aircraft selection are preserved separately from the v4 controller update.
+
+## Zero-throttle steering follow-up (v5, current)
+
+The unconditional v4 cutoff also blocked intentional pitch, roll, and yaw. The new configuration distinguishes centered-stick coasting from pilot-commanded steering. It disables MOTOR_STOP, enables PID at minimum throttle, and selects Betaflight's existing EZLANDING mixer. Extra collective authority comes from attitude-stick deflection (`ez_landing_threshold=100`), with zero baseline and speed-based allowances. AirMode, anti-gravity, and throttle boost remain off. Low throttle resets integral correction. The bridge masks stale motor packets only when throttle and attitude sticks are centered; it no longer blocks steering solely because throttle is low. The 0.4-second collective power-return ramp remains, and steering is available during it.
+
+All forces and rotations still come from individual motors and the rigid-body plant. No physical model parameters, thrust data, PID gains, or attitude integration were changed. This is a custom control configuration: centering attitude sticks at zero throttle releases control rather than braking rotation as standard AirMode would. Countersteering supplies braking torque, and steering can produce some lift despite zero collective input. The HUD and pilot instructions explain this behavior.
+
+The new `--test --scenario steering` test runs actual Betaflight with six independent airborne initial conditions: both roll directions, pitch up/down, and both yaw directions. Each maneuver applies moderate stick input, releases to coast, countersteers against existing rotation, then releases again. It exercises 0%, 0.5%, and 1% throttle, integrates the initial signed response, checks motor commands, checks continued arming/connection, and compares every release with a passive plant initialized from the same state. There is no state reset within a maneuver. The separate throttle regression covers continuous takeoff, coasting, and power return.
+
+Both aircraft passed all 31 zero-throttle steering assertions on native Betaflight 4.5.2 and Godot 4.5.2 at 60 FPS/500 Hz physics. All six directions and countersteering worked. Applied and native motor outputs returned to zero in the release checks, and passive-reference motion matched exactly. Maximum body-rate magnitude during these moderate steering/countersteering cases was approximately 1.79 rad/s for GoPro Drone and 1.11 rad/s for DJI FPV. These are software regression results with provisional plant parameters, not measured flight-dynamics validation.
+
+Both 12-assertion continuous throttle/coast tests and both 11-assertion powered-flight tests also passed. The GoPro and DJI maximum rates in the throttle scenario were approximately 3.28 and 0.63 rad/s, with final settling rates of 0.013 and 0.0045 rad/s. Both coast trajectories matched their passive reference exactly. The GoPro remains sensitive to collective changes because of its asymmetric mass/motor geometry and provisional tune. Physical Pocket feel still needs the user's flight check; saved calibration was preserved.
+
+All 15 aircraft/profile/UI assertions passed, for 123 assertions across the final v5 regression runs. Python syntax and Git whitespace checks passed. The native window was reopened and visually checked: DJI remained selected, the Pocket was detected as calibrated, the new pilot instructions fit, and returning to the flight view worked. No radio calibration or measured-parameter files were modified.
