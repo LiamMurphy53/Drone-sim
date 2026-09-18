@@ -24,6 +24,9 @@ var peak_rate := 0.0
 var coast_started := 0.0
 var before_counter := 0.0
 var after_counter := 0.0
+var response_delay := -1.0
+var early_rotation := 0.0
+var rate_at_100ms := 0.0
 var lost_arm := false
 var lost_connection := false
 var checked_cases := 0
@@ -38,7 +41,18 @@ func _initialize() -> void:
 
 func finish_case() -> void:
 	print(CASES[case_index][2], ": signed rotation=", response, " rad; motor peak=", motor_peak)
+	print("RESPONSE ", JSON.stringify({"axis":CASES[case_index][2], "delay_ms":response_delay * 1000, "rotation_150ms_deg":rad_to_deg(early_rotation), "rate_100ms_deg_s":rad_to_deg(rate_at_100ms)}))
 	check(response > .03, CASES[case_index][2] + " responds in the requested direction without throttle")
+	# Observable onset and early motion catch a return to the soft v5 stick
+	# curve. These limits are for the provisional models and a 35% stick step.
+	var yaw_axis: bool = CASES[case_index][0] == "yaw"
+	var max_delay := .17 if yaw_axis else .10
+	var minimum_rotation := .48 if yaw_axis else 2.0
+	if aircraft.profile_id == "gopro_drone":
+		max_delay = .11 if yaw_axis else .08
+		minimum_rotation = 1.4 if yaw_axis else (3.2 if case_index == 2 else 5.2)
+	check(response_delay >= 0 and response_delay < max_delay, CASES[case_index][2] + " begins promptly after stick movement")
+	check(rad_to_deg(early_rotation) > minimum_rotation, CASES[case_index][2] + " has a firm response within 150 ms")
 	check(motor_peak > .01, CASES[case_index][2] + " is produced by actual motor commands")
 	check(before_counter > .1 and after_counter < before_counter - .2, CASES[case_index][2] + " responds to countersteering at zero throttle")
 	check(not aircraft.crashed and aircraft.position.z > 1, CASES[case_index][2] + " stays airborne")
@@ -64,6 +78,9 @@ func _physics_process(dt: float) -> bool:
 			motor_peak = 0.0
 			before_counter = 0.0
 			after_counter = 0.0
+			response_delay = -1.0
+			early_rotation = 0.0
+			rate_at_100ms = 0.0
 		phase = elapsed - 6 - case_index * CASE_SECONDS
 		controls.throttle = [0.0, .005, .01][case_index % 3]
 		if phase >= .4 and phase < 1.0:
@@ -89,6 +106,11 @@ func _physics_process(dt: float) -> bool:
 		lost_connection = lost_connection or not link.connected
 		peak_rate = maxf(peak_rate, aircraft.omega.length())
 		var rates := {"roll":-aircraft.omega.y, "pitch":aircraft.omega.x, "yaw":-aircraft.omega.z}
+		if phase >= .4 and phase < 1.0:
+			var signed_rate: float = rates[CASES[case_index][0]] * CASES[case_index][1]
+			if response_delay < 0 and signed_rate >= .2: response_delay = phase - .4
+			if phase < .55: early_rotation += signed_rate * dt
+			if phase < .5: rate_at_100ms = signed_rate
 		if phase >= .5 and phase < 1.0:
 			response += rates[CASES[case_index][0]] * CASES[case_index][1] * dt
 			for value in commands: motor_peak = maxf(motor_peak, value)

@@ -1,6 +1,6 @@
 # Validation — 2026-09-18
 
-The current default is configuration **v5: Acro with stick-driven zero-throttle steering**. The earlier AirMode and unconditional motor-cutoff configurations are superseded; see the v5 follow-up for the current contract.
+The current default is configuration **v6: sharper stick response with zero-throttle steering**. It preserves v5's coast/steering behavior. Earlier AirMode and unconditional motor-cutoff configurations are superseded; see the v5 and v6 follow-ups for the current contract.
 
 Tested on this Apple M4 Mac with native arm64 Betaflight 4.5.2 and Godot 4.4.1 using the OpenGL compatibility renderer.
 
@@ -59,7 +59,7 @@ Both aircraft passed all 12 motor-cutoff assertions at 60 FPS/500 Hz physics on 
 
 Both 11-assertion powered-flight direction tests and all 15 aircraft/profile/UI checks also passed (61 assertions total for this follow-up). The axis test now uses pilot RC corrections to establish upright flight during seconds 6–9, then stops them before every direction and settling check. This avoids assuming a hands-off launch from the asymmetric GoPro frame with the reduced assistance. The application does not include this test pilot. Script syntax and Git whitespace checks passed; Pocket calibration and aircraft selection are preserved separately from the v4 controller update.
 
-## Zero-throttle steering follow-up (v5, current)
+## Zero-throttle steering follow-up (v5)
 
 The unconditional v4 cutoff also blocked intentional pitch, roll, and yaw. The new configuration distinguishes centered-stick coasting from pilot-commanded steering. It disables MOTOR_STOP, enables PID at minimum throttle, and selects Betaflight's existing EZLANDING mixer. Extra collective authority comes from attitude-stick deflection (`ez_landing_threshold=100`), with zero baseline and speed-based allowances. AirMode, anti-gravity, and throttle boost remain off. Low throttle resets integral correction. The bridge masks stale motor packets only when throttle and attitude sticks are centered; it no longer blocks steering solely because throttle is low. The 0.4-second collective power-return ramp remains, and steering is available during it.
 
@@ -72,3 +72,18 @@ Both aircraft passed all 31 zero-throttle steering assertions on native Betaflig
 Both 12-assertion continuous throttle/coast tests and both 11-assertion powered-flight tests also passed. The GoPro and DJI maximum rates in the throttle scenario were approximately 3.28 and 0.63 rad/s, with final settling rates of 0.013 and 0.0045 rad/s. Both coast trajectories matched their passive reference exactly. The GoPro remains sensitive to collective changes because of its asymmetric mass/motor geometry and provisional tune. Physical Pocket feel still needs the user's flight check; saved calibration was preserved.
 
 All 15 aircraft/profile/UI assertions passed, for 123 assertions across the final v5 regression runs. Python syntax and Git whitespace checks passed. The native window was reopened and visually checked: DJI remained selected, the Pocket was detected as calibrated, the new pilot instructions fit, and returning to the flight view worked. No radio calibration or measured-parameter files were modified.
+
+## Stick-response follow-up (v6, current)
+
+The user identified slow response to stick movement as the remaining floatiness. This change raises roll/pitch RC Rate from 0.80 to 1.00 and yaw from 0.70 to 0.90, reduces expo from 0.20/0.20/0.15 to 0.05 on all axes, and disables adaptive RC smoothing. Super Rate remains 0.60/0.60/0.50, so the response is still curved. PID gains, motor lag, mass, thrust, torque, inertia, the 0.4-second collective ramp, and v5's zero-throttle coast/steering behavior are unchanged.
+
+Before modifying the configuration, both aircraft ran the same instrumented 35%-stick direction/countersteering scenario under v5. A repeat with v6 showed earlier rotation and more angular travel in the first 150 ms on every direction. "Response delay" below means time from stick movement to 0.2 rad/s rotation in the commanded direction; it includes the plant's response and is not an isolated USB or transport latency measurement.
+
+| Aircraft | Mean response delay across six directions, v5 → v6 | Extra rotation in the first 150 ms, range across directions |
+|---|---|---|
+| GoPro Drone | 76.7 → 65.3 ms | 37–54% |
+| DJI FPV | 118.3 → 97.0 ms | 43–65% |
+
+These measurements use native Betaflight 4.5.2 and Godot 4.5.2 at 60 FPS with 500 Hz plant integration and the default estimated aircraft parameters. The steering test now records response delay, angular rate at 100 ms, and rotation at 150 ms, and enforces onset/early-motion bounds alongside direction, countersteering, coasting, and stability checks. This demonstrates a stronger early response in the tested conditions; real hardware calibration still requires measured data and a pilot check.
+
+Final regression runs passed all **132 assertions**: 43 steering/response checks, 12 continuous throttle/coast checks, and 11 powered-flight checks per aircraft. The repeat response runs passed the new early-motion bounds in every direction. There is normal run-to-run variation from asynchronous native-controller scheduling; the table records the first before/after comparison rather than a guaranteed latency. The saved v5 baseline measurements fall below the new early-motion requirement on all twelve model/direction combinations. Python syntax and Git whitespace checks also passed.

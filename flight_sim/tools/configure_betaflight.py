@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT/'vendor/betaflight-4.5.2/obj/main/betaflight_SITL.elf'
 RUNTIME = ROOT/'runtime'
-CONFIG_MARKER = RUNTIME/'configured-v5'
+CONFIG_MARKER = RUNTIME/'configured-v6'
 
 def configure():
     RUNTIME.mkdir(exist_ok=True)
@@ -57,9 +57,13 @@ def configure():
                     'set p_yaw = 20', 'set i_yaw = 3', 'set f_yaw = 0',
                     'set anti_gravity_gain = 0', 'set anti_gravity_p_gain = 0',
                     'set throttle_boost = 0',
-                    'set rates_type = BETAFLIGHT', 'set roll_rc_rate = 80', 'set pitch_rc_rate = 80',
-                    'set yaw_rc_rate = 70', 'set roll_srate = 60', 'set pitch_srate = 60', 'set yaw_srate = 50',
-                    'set roll_expo = 20', 'set pitch_expo = 20', 'set yaw_expo = 15',
+                    # USB input already has a calibrated deadband. Avoid an
+                    # extra adaptive RC filter driven by frame-batched packets.
+                    # Sharpen the stick curve without increasing PID gains.
+                    'set rc_smoothing = OFF',
+                    'set rates_type = BETAFLIGHT', 'set roll_rc_rate = 100', 'set pitch_rc_rate = 100',
+                    'set yaw_rc_rate = 90', 'set roll_srate = 60', 'set pitch_srate = 60', 'set yaw_srate = 50',
+                    'set roll_expo = 5', 'set pitch_expo = 5', 'set yaw_expo = 5',
                     'aux 0 0 0 1700 2100 0 0', 'save']
                 for cmd in commands:
                     conn.sendall((cmd+'\n').encode()); time.sleep(.035)
@@ -67,7 +71,7 @@ def configure():
                     if 'ERROR' in response or 'Invalid' in response:
                         raise RuntimeError('SITL rejected '+cmd+': '+response)
                 (RUNTIME/'configuration.txt').write_text(transcript)
-            CONFIG_MARKER.write_text('Betaflight 4.5.2; stick-driven zero-throttle steering and centered-stick coast; local simulation only\n')
+            CONFIG_MARKER.write_text('Betaflight 4.5.2; direct stick response with zero-throttle steering and centered-stick coast; local simulation only\n')
         finally:
             if proc.poll() is None:
                 proc.terminate()
