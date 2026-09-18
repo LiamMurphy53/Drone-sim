@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT/'vendor/betaflight-4.5.2/obj/main/betaflight_SITL.elf'
 RUNTIME = ROOT/'runtime'
-CONFIG_MARKER = RUNTIME/'configured-v7g'
+CONFIG_MARKER = RUNTIME/'configured-v8c'
 
 def configure():
     RUNTIME.mkdir(exist_ok=True)
@@ -37,12 +37,12 @@ def configure():
                 commands = [
                     'set craft_name = Deadcat Lab', 'mixer QUADX', 'map AETR1234',
                     'feature -GPS', 'feature -TELEMETRY',
-                    # At zero throttle, stick deflection permits steering power;
-                    # centered sticks permit none. Low throttle still resets I.
-                    'feature -AIRMODE', 'feature -MOTOR_STOP', 'feature -ANTI_GRAVITY',
+                    # Centered sticks request zero angular rate at every
+                    # throttle position, using normal AirMode motor authority.
+                    'feature AIRMODE', 'feature -MOTOR_STOP', 'feature -ANTI_GRAVITY',
                     'set pid_at_min_throttle = ON', 'set min_check = 1010',
-                    'set mixer_type = EZLANDING', 'set ez_landing_limit = 0',
-                    'set ez_landing_threshold = 100', 'set ez_landing_speed = 0',
+                    'set mixer_type = LEGACY', 'set airmode_start_throttle_percent = 0',
+                    'set throttle_limit_type = OFF', 'set throttle_limit_percent = 100',
                     'set motor_pwm_protocol = PWM', 'set motor_pwm_rate = 480',
                     'set min_command = 1000', 'set min_throttle = 1000', 'set max_throttle = 2000',
                     'set pid_process_denom = 1', 'set gyro_calib_duration = 50',
@@ -57,10 +57,11 @@ def configure():
                     # it using stock settings tuned for a different plant.
                     'set d_min_roll = 0', 'set d_min_pitch = 0', 'set d_min_yaw = 0',
                     'set tpa_rate = 0',
-                    # D damps the estimated 50 ms motor lag. Keep I for trim,
-                    # but avoid storing large stick transients as a correction.
-                    'set p_roll = 20', 'set i_roll = 3', 'set d_roll = 50', 'set f_roll = 0',
-                    'set p_pitch = 20', 'set i_pitch = 3', 'set d_pitch = 50', 'set f_pitch = 0',
+                    # D damps the estimated 50 ms motor lag. AirMode retains
+                    # I at low throttle; let it unwind hover trim quickly after
+                    # a cut while setpoint-based relief rejects stick transients.
+                    'set p_roll = 20', 'set i_roll = 6', 'set d_roll = 50', 'set f_roll = 0',
+                    'set p_pitch = 20', 'set i_pitch = 6', 'set d_pitch = 50', 'set f_pitch = 0',
                     'set p_yaw = 40', 'set i_yaw = 1', 'set d_yaw = 30', 'set f_yaw = 0',
                     'set iterm_relax = RPY_INC', 'set iterm_relax_type = SETPOINT',
                     'set iterm_relax_cutoff = 3',
@@ -83,7 +84,7 @@ def configure():
                     if 'ERROR' in response or 'Invalid' in response:
                         raise RuntimeError('SITL rejected '+cmd+': '+response)
                 (RUNTIME/'configuration.txt').write_text(transcript)
-            CONFIG_MARKER.write_text('Betaflight 4.5.2; damped rate control and transient integral relief; zero-throttle steering and coast; local simulation only\n')
+            CONFIG_MARKER.write_text('Betaflight 4.5.2; Acro AirMode braking at all throttle positions; immediate throttle commands; local simulation only\n')
         finally:
             if proc.poll() is None:
                 proc.terminate()

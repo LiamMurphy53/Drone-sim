@@ -1,6 +1,6 @@
 # Validation — 2026-09-18
 
-The current default is configuration **v7g: damped control with steady flight updates**. It preserves v6's stick curve and v5's coast/steering behavior. Earlier AirMode and unconditional motor-cutoff configurations are superseded; see the follow-ups below for the current contract.
+The current default is configuration **v8c: Acro AirMode with immediate throttle commands**. Centered sticks brake rotation at all throttle positions. The earlier custom coasting behavior and 0.4-second throttle ramp are superseded. The v7g rate curve, steady flight clock, and physical model parameters are retained; roll/pitch integral gain is adjusted for AirMode.
 
 Current checks run on this Apple M4 Mac with native arm64 Betaflight 4.5.2 and Godot 4.5.2 using the OpenGL compatibility renderer. The early checks below used Godot 4.4.1 where noted.
 
@@ -89,7 +89,7 @@ These measurements use native Betaflight 4.5.2 and Godot 4.5.2 at 60 FPS with 50
 Final regression runs passed all **132 assertions**: 43 steering/response checks, 12 continuous throttle/coast checks, and 11 powered-flight checks per aircraft. The repeat response runs passed the new early-motion bounds in every direction. There is normal run-to-run variation from asynchronous native-controller scheduling; the table records the first before/after comparison rather than a guaranteed latency. The saved v5 baseline measurements fall below the new early-motion requirement on all twelve model/direction combinations. Python syntax and Git whitespace checks also passed.
 
 
-## Large-input control and timing follow-up (v7g, current)
+## Large-input control and timing follow-up (v7g)
 
 Large commands exposed problems that the earlier small-input regressions missed. The original v6 DJI stress run peaked near 17.4 rad/s during full roll/pitch reversals despite a requested 8.73 rad/s; powered yaw still reached 2.17 rad/s in the late settling window. The controller connection remained active. These are control-tracking measurements, not evidence that USB packets were being dropped.
 
@@ -116,3 +116,29 @@ Final runs passed **242 live-controller assertions**: 55 aggressive checks per a
 Onset uses the same 0.2 rad/s threshold as v6; that earlier run measured means of 65.3 ms and 97.0 ms. These measurements include controller and modeled motor response, not physical USB latency. DJI's powered full-stick roll/pitch peaks are now about 8.71/8.70 rad/s for an 8.73 rad/s request. The asymmetric GoPro model still overshoots during full-power pitch (approximately 12.14 rad/s), so tracking is not exact. Its tune and physical estimates still need measured data and the user's Pocket flight check.
 
 The native scene/profile suite passed 16 checks, including physical motion while the main thread was deliberately stalled. Five flight-clock checks and the native motor-frame harness also passed, for **264 assertions/tests in the final validation set**. Changed Godot scripts passed parse checks; Python syntax, launcher shell syntax and Git whitespace checks passed. The native flight window was reopened and showed 500 Hz physics with DJI selected. No radio was detected at that final check; saved calibration files were not changed. The setup overlay was closed for the next flight.
+
+
+## Centered-stick braking and immediate throttle (v8c, current)
+
+The user requested that centering the attitude sticks stop an airborne spin, including with throttle off. This replaces the earlier explicitly requested coast behavior. Configuration v8c enables Betaflight AirMode from arming and uses the standard LEGACY mixer. The bridge no longer masks motor outputs when sticks are centered at zero throttle, allowing the controller to provide braking torque. Rotation remains motor-driven: there is no angular-velocity reset, auto-leveling or position/velocity hold.
+
+The reported slow throttle response had an explicit software cause: a 0.4-second smoothstep ramp on return from zero collective. That ramp is removed. An independent UDP capture verifies that the first RC packet after a zero-to-full step contains 2000 microseconds, and immediate half-throttle/cut/repeated full-throttle packets also match. Throttle limiting is explicitly off. The physical rotor response retains its original 50 ms time constant; individual motor commands still reflect attitude-control mixing.
+
+The steering regression now checks both directions of roll, pitch and yaw followed by release, with zero/0.5%/1% collective. It retains the previous response-delay and early-motion bounds, measures motor-driven braking, requires rates below 0.2 rad/s from 0.5 seconds after release, and compares against a passive plant that keeps rotating. Roll/pitch cases also require a retained tilt to rule out accidental auto-leveling. The aggressive regression now requires settling after release in the zero-throttle cases too. The continuous throttle test now includes two direct zero-to-full punches and measures native motor-command latency independently of physical thrust.
+
+AirMode retains integral trim when collective drops. The initial v8 GoPro run exposed slow decay of its asymmetric hover trim: residual pitch rate reached 0.572 rad/s in the low-throttle settling window. The intermediate I=8 setting restored fast trim recovery but failed the full-power pitch stress case. The selected v8c setting uses roll/pitch I=6 (from 3), retaining P=20, D=50 and integral relief to balance trim recovery and aggressive-input behavior. Yaw remains P/I/D=40/1/30. The independent steering fixtures briefly disarm between cases to reset controller trim along with the physical state; the continuous throttle test does not reset or disarm during its maneuvers.
+
+
+The final v8c run passed **272 live-controller assertions**: 56 steering/braking, 10 continuous throttle-punch, 59 aggressive-input, and 11 normal-flight checks per aircraft. The wire-level RC test passed 8 further checks, for **280 total**. Normal/steering/throttle tests ran at 60 FPS and aggressive tests at 30 FPS, all using the steady 500 Hz plant/controller exchange. Both drones remained connected and armed as requested, including through repeated cuts and full-throttle punches.
+
+| Measurement | GoPro Drone | DJI FPV |
+|---|---:|---:|
+| Full-throttle step to first native motor command ≥95%, two punches | 4 / 4 ms | 4 / 4 ms |
+| Worst rate during the moderate release-braking window, 0.5–1.2 s after release | 0.165 rad/s | 0.075 rad/s |
+| Worst low-throttle settling rate in continuous flight | 0.101 rad/s | 0.0026 rad/s |
+| Worst aggressive hold-window tracking RMS | 9.8% | 14.0% |
+| Normal-flight final settling rate | 0.0078 rad/s | 0.0124 rad/s |
+
+The timing measurement concerns the controller's motor command, not physical USB latency or instantaneous rotor thrust. Full throttle still permits unequal motor outputs for attitude control. GoPro's asymmetric provisional model retains a brief pitch kick on abrupt zero-to-full punches (peak body rate about 4.94 rad/s in this test); no ramp is used to hide it. Propulsion, inertia, CG and the tune still need measured-data validation. Mass, thrust/torque estimates, motor response constants, rates/expo and saved Pocket calibration were not changed.
+
+Godot script parsing, Python syntax and Git whitespace checks passed. The native app was reopened and visually checked at 500 Hz physics with DJI selected; the updated AirMode instructions fit the setup panel. No USB radio was detected at this final check. The setup panel was closed for the next flight.

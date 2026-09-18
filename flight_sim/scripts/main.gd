@@ -200,7 +200,7 @@ func render_flight(dt: float) -> void:
 	elif link.armed and arm_request:
 		state = "ARMED  /  ACRO"
 		if link.low_throttle:
-			state = "ARMED  /  COAST" if link.coasting else "ARMED  /  LOW-THROTTLE STEERING"
+			state = "ARMED  /  AIRMODE"
 	elif arm_request:
 		state = "WAITING TO ARM"
 	status_label.text = state
@@ -498,5 +498,5 @@ func build_ui() -> void:
 		tilt_label.text = "FPV camera tilt  /  %d°" % v
 	)
 	box.add_child(tilt)
-	box.add_child(label("Keyboard: W/S throttle · arrows pitch/roll · A/D yaw\nThrottle off: steer with pitch, roll, or yaw.\nCenter sticks to coast; countersteer to stop a turn.\nThrottle on: Acro steering, no auto-leveling.",13))
+	box.add_child(label("Keyboard: W/S throttle · arrows pitch/roll · A/D yaw\nCenter sticks to stop rotation at any throttle.\nAirMode keeps steering and braking available.\nAcro holds your tilt; it does not auto-level.",13))
 	box.add_child(button("Return to flight",func(): settings.hide()))

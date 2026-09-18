@@ -58,7 +58,7 @@ func finish_case() -> void:
 	else:
 		check(rapid_min < -.3 and rapid_max > .3, "Rapid reversals produce motion in both directions, case " + str(case_index))
 	check(peak_rate < 1.5 * target.length() + .25, "Large inputs avoid excessive rate overshoot, case " + str(case_index))
-	if case_index >= 4: check(settling_peak < .5, "Powered rotation settles after release, case " + str(case_index))
+	check(settling_peak < .5, "Rotation settles after release at any throttle, case " + str(case_index))
 	check(not aircraft.crashed, "Maneuver remains airborne, case " + str(case_index))
 	worst_error = maxf(worst_error, error)
 	checked += 1

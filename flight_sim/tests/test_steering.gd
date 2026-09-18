@@ -3,11 +3,12 @@ const FlightClock = preload("res://scripts/flight_clock.gd")
 var flight_clock := FlightClock.new()
 var finished := false
 ## Actual Betaflight and motor-driven motion with zero collective throttle.
-## Each isolated direction starts from rest in the air. The separate throttle
-## scenario exercises uninterrupted takeoff, coast and powered recovery.
+## Each airborne fixture steers, then releases to brake through real motors.
+## The passive reference proves this is active braking, not natural drag.
 const Aircraft = preload("res://scripts/aircraft.gd")
 const Link = preload("res://scripts/betaflight.gd")
-const CASE_SECONDS := 2.2
+const CASE_SECONDS := 2.6
+const START_TIME := 10.0
 const CASES := [
 	["roll", 1.0, "right roll"], ["roll", -1.0, "left roll"],
 	["pitch", -1.0, "pitch up"], ["pitch", 1.0, "pitch down"],
@@ -19,14 +20,9 @@ var elapsed := 0.0
 var case_index := -1
 var response := 0.0
 var motor_peak := 0.0
-var raw_coast_peak := 0.0
-var applied_coast_peak := 0.0
-var passive_error := 0.0
-var passive_attitude_matches := true
+var braking_motor_peak := 0.0
+var settling_rate := 0.0
 var peak_rate := 0.0
-var coast_started := 0.0
-var before_counter := 0.0
-var after_counter := 0.0
 var response_delay := -1.0
 var early_rotation := 0.0
 var rate_at_100ms := 0.0
@@ -34,13 +30,15 @@ var lost_arm := false
 var lost_connection := false
 var checked_cases := 0
 var failures := 0
+var cruise := .28
 
 func _initialize() -> void:
 	var arguments := OS.get_cmdline_user_args()
 	aircraft = Aircraft.new(false, arguments[0] if not arguments.is_empty() else "gopro_drone")
+	if aircraft.profile_id == "dji_fpv": cruise = .46
 	link = Link.new()
 	Engine.max_fps = int(arguments[1]) if arguments.size() > 1 else 60
-	print("Zero-throttle steering: ", aircraft.cfg.name, " at ", Engine.max_fps, " FPS")
+	print("Zero-throttle steering and release braking: ", aircraft.cfg.name, " at ", Engine.max_fps, " FPS")
 	call_deferred("start_clock")
 
 func finish_case() -> void:
@@ -58,7 +56,13 @@ func finish_case() -> void:
 	check(response_delay >= 0 and response_delay < max_delay, CASES[case_index][2] + " begins promptly after stick movement")
 	check(rad_to_deg(early_rotation) > minimum_rotation, CASES[case_index][2] + " has a firm response within 150 ms")
 	check(motor_peak > .01, CASES[case_index][2] + " is produced by actual motor commands")
-	check(before_counter > .1 and after_counter < before_counter - .2, CASES[case_index][2] + " responds to countersteering at zero throttle")
+	print("BRAKE ", CASES[case_index][2], " settled=", settling_rate, " passive=", passive.omega.length(), " motors=", braking_motor_peak)
+	check(settling_rate < .2, CASES[case_index][2] + " stops rotating after centering at zero throttle")
+	check(passive.omega.length() > .3 and aircraft.omega.length() < passive.omega.length() * .2, CASES[case_index][2] + " brakes substantially faster than a passive coast")
+	check(braking_motor_peak > .01, CASES[case_index][2] + " brakes using real motor outputs")
+	if not yaw_axis:
+		var up: Vector3 = Basis(aircraft.orientation) * Vector3(0,0,1)
+		check(up.angle_to(Vector3(0,0,1)) > .1, CASES[case_index][2] + " stops rotation without auto-leveling")
 	check(not aircraft.crashed and aircraft.position.z > 1, CASES[case_index][2] + " stays airborne")
 	checked_cases += 1
 
@@ -66,36 +70,39 @@ func _flight_step(dt: float) -> bool:
 	if finished: return false
 	elapsed += dt
 	var controls := {"roll":0.0,"pitch":0.0,"yaw":0.0,"throttle":0.0}
-	var end_time := 6.0 + CASE_SECONDS * CASES.size()
+	var end_time := START_TIME + CASE_SECONDS * CASES.size()
 	var arm := elapsed > 4.5 and elapsed < end_time
-	var testing := elapsed >= 6 and elapsed < end_time
+	var testing := elapsed >= START_TIME and elapsed < end_time
 	var phase := 0.0
+	if elapsed >= 5 and elapsed < START_TIME:
+		controls.throttle = cruise
+		var up: Vector3 = Basis(aircraft.orientation).transposed() * Vector3(0,0,1)
+		controls.roll = clampf(-.5 * up.x, -.25, .25)
+		controls.pitch = clampf(-.5 * up.y, -.25, .25)
 	if testing:
-		var next_case := mini(int((elapsed - 6) / CASE_SECONDS), CASES.size() - 1)
+		var next_case := mini(int((elapsed - START_TIME) / CASE_SECONDS), CASES.size() - 1)
 		if next_case != case_index:
 			if case_index >= 0: finish_case()
 			case_index = next_case
 			# Independent initial condition, never an in-maneuver correction.
 			aircraft = Aircraft.new(false, aircraft.profile_id)
-			aircraft.position = Vector3(0, 0, 30)
+			aircraft.position = Vector3(0, 0, 60)
 			passive = null
 			response = 0.0
 			motor_peak = 0.0
-			before_counter = 0.0
-			after_counter = 0.0
+			braking_motor_peak = 0.0
+			settling_rate = 0.0
 			response_delay = -1.0
 			early_rotation = 0.0
 			rate_at_100ms = 0.0
-		phase = elapsed - 6 - case_index * CASE_SECONDS
+		phase = elapsed - START_TIME - case_index * CASE_SECONDS
+		# Reset controller trim with the physical fixture. AirMode retains I
+		# while armed, so teleporting just the plant would inject stale trim.
+		arm = phase >= .4
 		controls.throttle = [0.0, .005, .01][case_index % 3]
-		if phase >= .4 and phase < 1.0:
+		if phase >= .8 and phase < 1.4:
 			controls[CASES[case_index][0]] = .35 * CASES[case_index][1]
-		# Release to coast, then oppose the existing rotation using the sticks.
-		if phase >= 1.3 and phase < 1.6:
-			controls[CASES[case_index][0]] = -.35 * CASES[case_index][1]
-			passive = null
-		if ((phase >= 1.0 and phase < 1.3) or phase >= 1.6) and passive == null:
-			coast_started = elapsed
+		if phase >= 1.4 and passive == null:
 			passive = Aircraft.new(false, aircraft.profile_id)
 			passive.position = aircraft.position
 			passive.velocity = aircraft.velocity
@@ -107,37 +114,29 @@ func _flight_step(dt: float) -> bool:
 	var commands: PackedFloat64Array = link.motors if link.armed and arm else PackedFloat64Array([0,0,0,0])
 	aircraft.step(commands, dt)
 	if testing:
-		if not link.armed and not lost_arm: print("ARM LOST at ", elapsed, " flags=", link.arming_flags)
-		lost_arm = lost_arm or not link.armed
+		if phase >= .7:
+			if not link.armed and not lost_arm: print("ARM LOST at ", elapsed, " flags=", link.arming_flags)
+			lost_arm = lost_arm or not link.armed
 		lost_connection = lost_connection or not link.connected
 		peak_rate = maxf(peak_rate, aircraft.omega.length())
 		var rates := {"roll":-aircraft.omega.y, "pitch":aircraft.omega.x, "yaw":-aircraft.omega.z}
-		if phase >= .4 and phase < 1.0:
+		if phase >= .8 and phase < 1.4:
 			# Include the initial motor impulse, not just the later steady hold.
 			for value in commands: motor_peak = maxf(motor_peak, value)
 			var signed_rate: float = rates[CASES[case_index][0]] * CASES[case_index][1]
-			if response_delay < 0 and signed_rate >= .2: response_delay = phase - .4
-			if phase < .55: early_rotation += signed_rate * dt
-			if phase < .5: rate_at_100ms = signed_rate
-		if phase >= .5 and phase < 1.0:
+			if response_delay < 0 and signed_rate >= .2: response_delay = phase - .8
+			if phase < .95: early_rotation += signed_rate * dt
+			if phase < .9: rate_at_100ms = signed_rate
+		if phase >= .9 and phase < 1.4:
 			response += rates[CASES[case_index][0]] * CASES[case_index][1] * dt
-		if phase >= 1.2 and phase < 1.3: before_counter = rates[CASES[case_index][0]] * CASES[case_index][1]
-		if phase >= 1.5 and phase < 1.6: after_counter = rates[CASES[case_index][0]] * CASES[case_index][1]
-		if (phase >= 1.0 and phase < 1.3) or phase >= 1.6:
+		if phase >= 1.4:
 			passive.step(PackedFloat64Array([0,0,0,0]), dt)
-			passive_error = maxf(passive_error, (aircraft.position-passive.position).length() + (aircraft.velocity-passive.velocity).length() + (aircraft.omega-passive.omega).length())
-			passive_attitude_matches = passive_attitude_matches and aircraft.orientation.is_equal_approx(passive.orientation)
-			for value in commands: applied_coast_peak = maxf(applied_coast_peak, value)
-			if elapsed - coast_started >= .2:
-				for value in link.raw_motors: raw_coast_peak = maxf(raw_coast_peak, value)
+			for value in commands: braking_motor_peak = maxf(braking_motor_peak, value)
+		if phase >= 1.9: settling_rate = maxf(settling_rate, aircraft.omega.length())
 	if not testing and case_index >= 0 and checked_cases < CASES.size(): finish_case()
 	if elapsed > end_time + 1:
-		print("Coast raw/applied: ", raw_coast_peak, " / ", applied_coast_peak, "; passive error: ", passive_error, "; peak rate: ", peak_rate)
 		check(checked_cases == 6, "All six directions exercised")
-		check(not lost_connection and not lost_arm, "Connection and arming survive zero-throttle steering")
-		check(applied_coast_peak == 0.0, "Centering sticks immediately releases motor authority")
-		check(raw_coast_peak < .000001, "Betaflight itself stops correcting after sticks are centered")
-		check(passive_error < .00001 and passive_attitude_matches, "Releasing steering preserves a physical coast with no attitude correction")
+		check(not lost_connection and not lost_arm, "Connection and arming survive zero-throttle steering and braking")
 		check(peak_rate < 3, "Moderate steering remains bounded on every axis")
 		check(not link.armed, "Disarms on request")
 		print("Zero-throttle steering failures: ", failures)
