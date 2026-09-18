@@ -3,7 +3,12 @@ extends RefCounted
 ## UDP 9001: uint16 count + 2 padding bytes + 16 float PWM values.
 ## UDP 9003: 18 little-endian doubles; UDP 9004: double + 16 uint16.
 const Aircraft = preload("res://scripts/aircraft.gd")
+const MOTOR_CUTOFF_THROTTLE := 0.01
+const POWER_RETURN_SECONDS := 0.4
 var motors := PackedFloat64Array([0, 0, 0, 0])
+var raw_motors := PackedFloat64Array([0, 0, 0, 0])
+var coasting := true
+var powered_time := 0.0
 var output := PacketPeerUDP.new()
 var state := PacketPeerUDP.new()
 var rc := PacketPeerUDP.new()
@@ -40,12 +45,31 @@ func update(aircraft, controls: Dictionary, arm_request: bool, dt: float) -> voi
 		var order := [3, 1, 2, 0]
 		for i in range(4):
 			var value := packet.decode_float(4 + order[i] * 4)
-			motors[i] = clampf((value - 1000.0) / 1000.0, 0, 1) if is_finite(value) else 0
+			raw_motors[i] = clampf((value - 1000.0) / 1000.0, 0, 1) if is_finite(value) else 0
 		last_motor_us = Time.get_ticks_usec()
 	connected = last_motor_us > 0 and Time.get_ticks_usec() - last_motor_us < 250000
 	if not connected:
-		motors.fill(0)
+		raw_motors.fill(0)
 		armed = false
+	var throttle := clampf(float(controls.throttle), 0, 1)
+	coasting = throttle <= MOTOR_CUTOFF_THROTTLE
+	if coasting or not arm_request:
+		powered_time = 0.0
+	else:
+		powered_time = minf(POWER_RETURN_SECONDS, powered_time + dt)
+	if coasting:
+		throttle = 0.0
+	else:
+		# Ramp only the return from motor cutoff. Send the ramp through the FC
+		# so its controller sees the applied throttle, rather than masking its
+		# outputs and winding up I. Cuts always bypass this ramp immediately.
+		throttle *= smoothstep(0.0, POWER_RETURN_SECONDS, powered_time)
+	motors = raw_motors.duplicate()
+	# Honor a fresh stick cutoff immediately, even if the most recent UDP
+	# motor packet predates it. Betaflight MOTOR_STOP + pid_at_min_throttle=OFF
+	# also stops its outputs and resets I internally. Rotor coast-down remains
+	# in the physical model; do not freeze motion or clear angular momentum.
+	if coasting: motors.fill(0)
 	var packet := PackedByteArray()
 	packet.resize(144)
 	var w: Vector3 = aircraft.omega
@@ -70,7 +94,7 @@ func update(aircraft, controls: Dictionary, arm_request: bool, dt: float) -> voi
 	channels.resize(40)
 	channels.encode_double(0, timestamp)
 	var inputs := [1500 + 500 * controls.roll, 1500 + 500 * controls.pitch,
-		1000 + 1000 * controls.throttle, 1500 + 500 * controls.yaw,
+		1000 + 1000 * throttle, 1500 + 500 * controls.yaw,
 		2000 if arm_request else 1000]
 	for i in range(16):
 		channels.encode_u16(8 + i * 2, int(inputs[i]) if i < inputs.size() else 1000)

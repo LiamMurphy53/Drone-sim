@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT/'vendor/betaflight-4.5.2/obj/main/betaflight_SITL.elf'
 RUNTIME = ROOT/'runtime'
-CONFIG_MARKER = RUNTIME/'configured-v3'
+CONFIG_MARKER = RUNTIME/'configured-v4'
 
 def configure():
     RUNTIME.mkdir(exist_ok=True)
@@ -37,7 +37,10 @@ def configure():
                 commands = [
                     'set craft_name = Deadcat Lab', 'mixer QUADX', 'map AETR1234',
                     'feature -GPS', 'feature -TELEMETRY',
-                    'feature AIRMODE', 'feature -MOTOR_STOP', 'feature ANTI_GRAVITY',
+                    # Coast at zero throttle: no motor authority or retained I
+                    # correction while the pilot has cut power.
+                    'feature -AIRMODE', 'feature MOTOR_STOP', 'feature -ANTI_GRAVITY',
+                    'set pid_at_min_throttle = OFF', 'set min_check = 1010',
                     'set motor_pwm_protocol = PWM', 'set motor_pwm_rate = 480',
                     'set min_command = 1000', 'set min_throttle = 1000', 'set max_throttle = 2000',
                     'set pid_process_denom = 1', 'set gyro_calib_duration = 50',
@@ -50,10 +53,8 @@ def configure():
                     'set p_roll = 8', 'set i_roll = 8', 'set d_roll = 0', 'set f_roll = 0',
                     'set p_pitch = 8', 'set i_pitch = 8', 'set d_pitch = 0', 'set f_pitch = 0',
                     'set p_yaw = 20', 'set i_yaw = 3', 'set f_yaw = 0',
-                    # Anti-gravity adds integral gain independently of i_roll /
-                    # i_pitch. Scale the stock 80 boost with our 8-vs-80 I tune;
-                    # otherwise throttle chops briefly restore a much hotter tune.
-                    'set anti_gravity_gain = 8', 'set anti_gravity_p_gain = 100',
+                    'set anti_gravity_gain = 0', 'set anti_gravity_p_gain = 0',
+                    'set throttle_boost = 0',
                     'set rates_type = BETAFLIGHT', 'set roll_rc_rate = 80', 'set pitch_rc_rate = 80',
                     'set yaw_rc_rate = 70', 'set roll_srate = 60', 'set pitch_srate = 60', 'set yaw_srate = 50',
                     'set roll_expo = 20', 'set pitch_expo = 20', 'set yaw_expo = 15',
@@ -64,7 +65,7 @@ def configure():
                     if 'ERROR' in response or 'Invalid' in response:
                         raise RuntimeError('SITL rejected '+cmd+': '+response)
                 (RUNTIME/'configuration.txt').write_text(transcript)
-            CONFIG_MARKER.write_text('Betaflight 4.5.2; scaled throttle-transient PID boost; local simulation only\n')
+            CONFIG_MARKER.write_text('Betaflight 4.5.2; Acro with motor cutoff, no AirMode or throttle boosts; local simulation only\n')
         finally:
             if proc.poll() is None:
                 proc.terminate()

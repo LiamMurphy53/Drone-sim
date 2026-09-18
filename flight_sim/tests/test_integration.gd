@@ -29,6 +29,13 @@ func _physics_process(dt: float) -> bool:
 	# Maintain altitude margin through the open-loop attitude maneuvers and the
 	# final second of motor-off fall; this is not an altitude-hold controller.
 	if elapsed > 6 and elapsed < 14: controls.throttle = flight_throttle
+	# Establish upright flight through ordinary pilot inputs before checking
+	# axis directions. The asymmetric GoPro frame cannot be assumed to launch
+	# hands-off in Acro; no leveling runs during any direction/settling check.
+	if elapsed > 6 and elapsed < 9:
+		var up_body: Vector3 = Basis(aircraft.orientation).transposed() * Vector3(0,0,1)
+		controls.roll = clampf(-.5 * up_body.x, -.25, .25)
+		controls.pitch = clampf(-.5 * up_body.y, -.25, .25)
 	if elapsed > 10 and elapsed < 10.25: controls.roll = 0.15
 	if elapsed > 11 and elapsed < 11.25: controls.pitch = 0.15
 	if elapsed > 12 and elapsed < 12.25: controls.yaw = 0.2

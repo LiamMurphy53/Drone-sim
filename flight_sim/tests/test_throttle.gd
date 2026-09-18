@@ -1,19 +1,30 @@
 extends SceneTree
-## Real Betaflight regression: throttle chops immediately after attitude inputs,
-## plus a commanded turn at zero throttle. No attitude/position resets in flight.
+## Native Betaflight regression for Acro with zero-throttle motor cutoff.
+## The reference plant follows the same physical state with zero motor commands.
 const Aircraft = preload("res://scripts/aircraft.gd")
 const Link = preload("res://scripts/betaflight.gd")
 var aircraft
+var passive
 var link
 var elapsed := 0.0
 var failures := 0
 var last_second := -1
+var was_coasting := false
+var coast_started := 0.0
+var coast_intervals := 0
+var off_command_peak := 0.0
+var off_raw_peak := 0.0
+var residual_thrust := 0.0
+var passive_error := 0.0
+var passive_attitude_matches := true
+var coast_travel := 0.0
+var coast_origin := Vector3.ZERO
 var unexpected_disarm := false
 var lost_connection := false
 var peak_rate := 0.0
-var settling := [0.0, 0.0, 0.0]
+var peak_time := 0.0
 var recovery_rate := 0.0
-var low_throttle_roll := 0.0
+var powered_roll := 0.0
 var minimum_altitude := INF
 var takeoff := .42
 var cruise := .28
@@ -26,58 +37,86 @@ func _initialize() -> void:
 		cruise = .46
 	link = Link.new()
 	Engine.max_fps = int(arguments[1]) if arguments.size() > 1 else 60
-	print("Throttle-transient test: ", aircraft.cfg.name, " at ", Engine.max_fps, " FPS")
+	print("Motor-cutoff test: ", aircraft.cfg.name, " at ", Engine.max_fps, " FPS")
+
+func start_passive_reference() -> void:
+	passive = Aircraft.new(false, aircraft.profile_id)
+	passive.position = aircraft.position
+	passive.velocity = aircraft.velocity
+	passive.orientation = aircraft.orientation
+	passive.omega = aircraft.omega
+	passive.propulsion.speed = aircraft.propulsion.speed.duplicate()
+	passive.contact = aircraft.contact
+	coast_origin = aircraft.position
+	coast_started = elapsed
+	coast_intervals += 1
 
 func _physics_process(dt: float) -> bool:
 	elapsed += dt
 	var controls := {"roll":0.0,"pitch":0.0,"yaw":0.0,"throttle":0.0}
-	var arm := elapsed > 4 and elapsed < 28
+	var arm := elapsed > 4 and elapsed < 29
 	if elapsed >= 6 and elapsed < 10: controls.throttle = takeoff
-	if elapsed >= 10 and elapsed < 28: controls.throttle = cruise
-	# Act as a pilot leveling between maneuvers, through RC sticks only. An acro
-	# controller holds rates, not attitude; the asymmetric frame needs steering
-	# during takeoff. Stop this well before each maneuver and throughout every
-	# low-throttle/settling window, so it cannot conceal the instability tested.
-	if (elapsed >= 6 and elapsed < 11) or (elapsed >= 15 and elapsed < 16.5) or (elapsed >= 20 and elapsed < 21):
+	if elapsed >= 10 and elapsed < 29: controls.throttle = cruise
+	# Pilot steering through normal RC channels establishes upright flight.
+	# It is absent in both coast intervals and the final recovery window.
+	if (elapsed >= 6 and elapsed < 11) or (elapsed >= 15 and elapsed < 18) or (elapsed >= 22.5 and elapsed < 25):
 		var up_body: Vector3 = Basis(aircraft.orientation).transposed() * Vector3(0,0,1)
 		controls.roll = clampf(-.5 * up_body.x, -.25, .25)
 		controls.pitch = clampf(-.5 * up_body.y, -.25, .25)
-	if elapsed >= 12 and elapsed < 12.25: controls.roll = .15
-	if elapsed >= 12.25 and elapsed < 14.75: controls.throttle = 0.0
-	if elapsed >= 17 and elapsed < 17.25: controls.pitch = .15
-	if elapsed >= 17.25 and elapsed < 19.75: controls.throttle = .08
-	if elapsed >= 22 and elapsed < 24.75: controls.throttle = 0.0
-	# Verify genuine low-throttle control, rather than passing by freezing rates.
-	if elapsed >= 22.2 and elapsed < 22.45: controls.roll = -.15
+	if elapsed >= 11 and elapsed < 11.25: controls.roll = .15
+	if elapsed >= 19 and elapsed < 19.25: controls.pitch = .15
+	var coasting := (elapsed >= 12.5 and elapsed < 14.5) or (elapsed >= 20 and elapsed < 22)
+	if coasting:
+		# Exercise exactly zero, the cutoff boundary, and endpoint jitter.
+		controls.throttle = 0.0 if elapsed < 13.5 else (.01 if elapsed < 14.5 else .005)
+		# Deflected attitude sticks must not turn motors on while coasting.
+		controls.roll = .5
+		controls.pitch = -.4
+		controls.yaw = .35
+		if not was_coasting: start_passive_reference()
+	if elapsed >= 25.5 and elapsed < 25.75: controls.roll = .15
 	link.update(aircraft, controls, arm, dt)
 	var commands: PackedFloat64Array = link.motors if link.armed and arm else PackedFloat64Array([0,0,0,0])
 	aircraft.step(commands, dt)
-	if elapsed >= 8 and elapsed < 27.9:
+	if coasting:
+		passive.step(PackedFloat64Array([0,0,0,0]), dt)
+		for motor in range(4):
+			off_command_peak = maxf(off_command_peak, link.motors[motor])
+			# Allow the controller's RX/UDP latency, independently checking that
+			# its own outputs stop; a game-side mask alone must not pass this.
+			if elapsed - coast_started > .12: off_raw_peak = maxf(off_raw_peak, link.raw_motors[motor])
+			if elapsed - coast_started > .5: residual_thrust = maxf(residual_thrust, aircraft.thrust[motor])
+		passive_error = maxf(passive_error, (aircraft.position-passive.position).length() + (aircraft.velocity-passive.velocity).length() + (aircraft.omega-passive.omega).length())
+		passive_attitude_matches = passive_attitude_matches and aircraft.orientation.is_equal_approx(passive.orientation)
+		coast_travel = maxf(coast_travel, (aircraft.position-coast_origin).length())
+	was_coasting = coasting
+	if elapsed >= 8 and elapsed < 28.9:
 		unexpected_disarm = unexpected_disarm or not link.armed
 		lost_connection = lost_connection or not link.connected
-		peak_rate = maxf(peak_rate, aircraft.omega.length())
+		if aircraft.omega.length() > peak_rate:
+			peak_rate = aircraft.omega.length()
+			peak_time = elapsed
 		minimum_altitude = minf(minimum_altitude, aircraft.position.z)
-	# Require < 0.2 rad/s over a half-second window about two seconds after
-	# each transient; the provisional slow motor/PI model is not instantaneous.
-	if elapsed >= 14.25 and elapsed < 14.75: settling[0] = maxf(settling[0], aircraft.omega.length())
-	if elapsed >= 19.25 and elapsed < 19.75: settling[1] = maxf(settling[1], aircraft.omega.length())
-	if elapsed >= 24.25 and elapsed < 24.75: settling[2] = maxf(settling[2], aircraft.omega.length())
-	if elapsed >= 26.75 and elapsed < 27.25: recovery_rate = maxf(recovery_rate, aircraft.omega.length())
-	if elapsed >= 22.25 and elapsed < 22.45: low_throttle_roll += aircraft.omega.y * dt
+	if elapsed >= 25.55 and elapsed < 25.75: powered_roll += -aircraft.omega.y * dt
+	if elapsed >= 28 and elapsed < 28.5: recovery_rate = maxf(recovery_rate, aircraft.omega.length())
 	if int(elapsed) != last_second:
 		last_second = int(elapsed)
 		print("t=",last_second," throttle=",controls.throttle," armed=",link.armed," z=",aircraft.position.z," omega=",aircraft.omega," motors=",link.motors)
-	if elapsed > 29:
-		print("Peak rate: ",peak_rate,"; settled rates at low throttle: ",settling,"; recovery rate: ", recovery_rate, "; zero-throttle roll: ",low_throttle_roll)
+	if elapsed > 30:
+		print("Off commands/raw: ",off_command_peak," / ",off_raw_peak,"; passive error: ",passive_error,"; residual thrust: ",residual_thrust,"; peak/recovery rates: ",peak_rate," at t=",peak_time," / ",recovery_rate)
 		check(not lost_connection, "Continuous controller connection")
-		check(not unexpected_disarm, "No unexpected disarming during throttle chops")
-		check(not aircraft.crashed and minimum_altitude > 1, "Maneuvers remain airborne without contact")
-		check(peak_rate < 5, "Throttle transients do not cause runaway rotation")
-		for i in range(settling.size()): check(settling[i] < .2, "Rotation settles during low-throttle interval %d" % (i+1))
-		check(recovery_rate < .2, "Rotation settles after throttle is restored")
-		check(low_throttle_roll > .01, "Roll control remains effective at zero throttle")
-		check(not link.armed, "Disarms on request after low-throttle flight")
-		print("Throttle test failures: ",failures)
+		check(not unexpected_disarm, "Throttle cutoff keeps the armed state")
+		check(not aircraft.crashed and minimum_altitude > 1, "Flight remains airborne without contact")
+		check(coast_intervals == 2 and off_command_peak == 0.0, "Zero throttle cuts all motor commands immediately, including jitter and stick deflection")
+		check(off_raw_peak < .000001, "Betaflight itself stops motors while throttle is off")
+		check(residual_thrust < .0001, "Rotors coast down without sustained thrust")
+		check(passive_error < .00001 and passive_attitude_matches, "Throttle-off motion matches an uncontrolled physical coast")
+		check(coast_travel > 1, "Coasting preserves free motion instead of freezing the drone")
+		check(peak_rate < 5, "Throttle restoration stays bounded")
+		check(powered_roll > .01, "Powered steering resumes after throttle is restored")
+		check(recovery_rate < .2, "Rotation settles after powered steering")
+		check(not link.armed, "Disarms on request")
+		print("Motor-cutoff test failures: ",failures)
 		link.close()
 		quit(1 if failures else 0)
 	return false

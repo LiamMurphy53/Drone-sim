@@ -1,5 +1,7 @@
 # Validation — 2026-09-18
 
+The current default is configuration **v4: Acro with motor cutoff**. The earlier AirMode results below describe superseded behavior; see the motor-cutoff follow-up for the current contract.
+
 Tested on this Apple M4 Mac with native arm64 Betaflight 4.5.2 and Godot 4.4.1 using the OpenGL compatibility renderer.
 
 ## Automated checks
@@ -33,7 +35,7 @@ The setup script now pins and upgrades to 4.5.2. The simulator rescans after sta
 
 References: [Godot desktop controller support](https://docs.godotengine.org/en/stable/tutorials/inputs/controllers_gamepads_joysticks.html), [Godot 4.5.2 release](https://github.com/godotengine/godot-builds/releases/tag/4.5.2-stable).
 
-## Airborne throttle-cut follow-up
+## Airborne throttle-cut follow-up (v3, superseded)
 
 The reported throttle-cut instability was reproduced with native Betaflight. The previous configuration reduced roll/pitch P and I for the inherited 50 ms motor response but retained the stock anti-gravity gain of 80. Betaflight adds this transient integral boost independently of the configured I gain, and also boosts P during throttle changes. The stock boost was excessive for this provisional plant/tune. AirMode was already enabled.
 
@@ -46,3 +48,13 @@ Both aircraft passed all 10 throttle assertions on Godot 4.5.2 at 60 FPS with 50
 The existing 11-assertion normal-flight integration test also passed again for each aircraft at 60 FPS on Godot 4.5.2: takeoff, all three initial rotation directions, settling, continued arming, and disarming. In total, this follow-up passed 42 live-controller assertions. Python syntax and Git whitespace checks passed. The underlying physics equations were not modified in this follow-up.
 
 As a negative control, the exact new GoPro throttle scenario was rerun at 60 FPS with the original saved controller configuration in a temporary runtime directory. It failed four assertions: staying airborne, bounded rotation, and the first two low-throttle settling windows. The v3 configuration passed the same scenario. This verifies that the regression catches the original fault; the production runtime retained v3 throughout this comparison.
+
+## Motor-cutoff follow-up (v4, current)
+
+The requested behavior now explicitly gives up off-throttle stabilization. AirMode, anti-gravity, and throttle boost are off; MOTOR_STOP is on and `pid_at_min_throttle` is off. The bottom 1% of calibrated throttle sends zero to Betaflight and immediately cuts the bridge's applied motor commands, including when an older powered motor packet is still in flight. Betaflight also stops its own motor outputs and clears integral correction while throttle is low. Power returns through a 0.4-second throttle ramp, then follows the stick normally. Cuts bypass the ramp. Powered Acro rate control remains active; this is not direct stick-to-motor control.
+
+The throttle regression now checks this contract instead of v3's zero-throttle steering/settling expectations. It exercises zero, 0.5%, and the 1% boundary with roll/pitch/yaw sticks deflected. A second physical plant starts with the exact aircraft state and rotor speeds at each cutoff and evolves with zero motor commands. Both motion and attitude must match this passive reference, with nonzero travel confirming that motion is not frozen. The test separately checks the raw Betaflight outputs, so masking controller outputs in the application alone cannot pass. Takeoff and between-maneuver steering use ordinary RC channels only.
+
+Both aircraft passed all 12 motor-cutoff assertions at 60 FPS/500 Hz physics on Godot 4.5.2: immediate zero commands, zero native controller outputs, natural rotor coast-down, exact passive-reference motion, continued arming, airborne flight, bounded power return, resumed powered steering, settling, and requested disarming. The GoPro's brief power-return response is still more pronounced than the DJI approximation's; the provisional mass properties, motor response, and powered tune remain subject to measurement and flight-data validation. No mass, thrust, torque, inertia, or motor-response numbers were changed for this behavior change.
+
+Both 11-assertion powered-flight direction tests and all 15 aircraft/profile/UI checks also passed (61 assertions total for this follow-up). The axis test now uses pilot RC corrections to establish upright flight during seconds 6–9, then stops them before every direction and settling check. This avoids assuming a hands-off launch from the asymmetric GoPro frame with the reduced assistance. The application does not include this test pilot. Script syntax and Git whitespace checks passed; Pocket calibration and aircraft selection are preserved separately from the v4 controller update.
