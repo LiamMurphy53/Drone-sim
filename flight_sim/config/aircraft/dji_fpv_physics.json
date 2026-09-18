@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "motor": {
+    "response_model": "rotor_speed",
+    "spin_up_tau_s": null,
+    "spin_down_tau_s": null,
+    "note": "Null response times inherit the original 0.05 s estimate. Steady thrust stays linear until a measured curve is imported. Normalized rotor speed is inferred from sqrt(thrust); it is not a measured RPM model."
+  },
+  "aerodynamics": {
+    "air_density_kg_m3": 1.225,
+    "body_cd_area_m2": [
+      0.0169545,
+      0.022098000000000003,
+      0.030972000000000003
+    ],
+    "center_of_pressure_relative_to_cg_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotor_in_plane_drag_N_s_per_m_at_full_speed": 0.025,
+    "angular_drag_Nm_s2": [
+      8e-05,
+      8e-05,
+      0.00012
+    ],
+    "wind_world_m_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "note": "Unmeasured estimate: CdA = 0.75 times each projected propeller-free envelope area. Rotor drag and angular damping inherit the shared provisional model; not fitted to DJI performance."
+  },
+  "ground_effect": {
+    "enabled": true,
+    "maximum_thrust_multiplier": 1.2,
+    "minimum_upward_alignment": 0.7,
+    "note": "Bounded flat-ground image-rotor approximation using each rotor's height. Fades out with tilt. Applies to thrust only; this is not a propwash or vortex-ring model."
+  },
+  "contact": {
+    "footprint_motor_arm_scale": 0.8,
+    "friction_coefficient": 0.65,
+    "crash_normal_speed_m_s": 3.5,
+    "solver_iterations": 48,
+    "note": "Four approximate support points below the frame. Inelastic impulses and Coulomb friction; no frame flex or damage model. Rotor disk contact counts as a crash."
+  }
+}

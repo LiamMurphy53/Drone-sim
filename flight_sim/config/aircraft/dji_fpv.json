@@ -1,0 +1,120 @@
+{
+  "id": "dji_fpv",
+  "name": "DJI FPV",
+  "source": "DJI official specifications + explicit estimates; docs/AIRCRAFT_MODELS.md",
+  "axes": "x left, y backward, z up; SI units below",
+  "mass_kg": 0.795,
+  "cg_m": [
+    0,
+    0,
+    0
+  ],
+  "motors_m": [
+    [
+      0.09718980243587996,
+      -0.07456803807580445,
+      0
+    ],
+    [
+      -0.09718980243587996,
+      -0.07456803807580445,
+      0
+    ],
+    [
+      0.09718980243587996,
+      0.07456803807580445,
+      0
+    ],
+    [
+      -0.09718980243587996,
+      0.07456803807580445,
+      0
+    ]
+  ],
+  "motor_names": [
+    "FL",
+    "FR",
+    "RL",
+    "RR"
+  ],
+  "spin_sign": [
+    1,
+    -1,
+    -1,
+    1
+  ],
+  "inertia_kg_m2": [
+    [
+      0.00316761125,
+      0,
+      0
+    ],
+    [
+      0,
+      0.00463438625,
+      0
+    ],
+    [
+      0,
+      0,
+      0.0056649050000000005
+    ]
+  ],
+  "max_thrust_N": 7.406472412499999,
+  "torque_per_thrust_m": 0.013,
+  "motor_tau_s": 0.05,
+  "timestep_s": 0.002,
+  "gravity": 9.80665,
+  "propeller_radius_m": 0.0673,
+  "ground_clearance_m": 0.0635,
+  "visual": {
+    "style": "dji_fpv",
+    "body_size_m": [
+      0.09,
+      0.08,
+      0.15
+    ]
+  },
+  "published": {
+    "diagonal_m": 0.245,
+    "dimensions_without_props_m": [
+      0.178,
+      0.232,
+      0.127
+    ],
+    "propeller_pitch_m": 0.0711,
+    "propeller_mass_kg": 0.0052,
+    "manual_mode_max_speed_m_s": 39,
+    "zero_to_100_kph_s": 2,
+    "note": "Speed and acceleration are reference specs only, not hard limits or validated outputs."
+  },
+  "sources": [
+    {
+      "url": "https://www.dji.com/dji-fpv",
+      "retrieved": "2026-09-18",
+      "fields": [
+        "mass",
+        "dimensions",
+        "diagonal",
+        "reference speed and acceleration"
+      ]
+    },
+    {
+      "url": "https://store.dji.com/product/dji-fpv-propellers",
+      "retrieved": "2026-09-18",
+      "fields": [
+        "propeller diameter",
+        "pitch",
+        "propeller mass"
+      ]
+    }
+  ],
+  "assumptions": [
+    "Motor rectangle uses envelope aspect ratio and the published diagonal; CG centered and rotors coplanar.",
+    "Inertia is a uniform-box estimate, not a measured mass distribution.",
+    "3.8:1 maximum thrust/weight is an unverified prior; linear static curve, 50 ms response and Q/T=0.013 m are provisional.",
+    "Spin signs match the simulator Betaflight mixer; DJI motor mapping is not reproduced.",
+    "Contact geometry, body shape and drag are approximate.",
+    "Uses Betaflight Acro, not DJI firmware, Normal/Sport modes, stabilization, braking or GPS."
+  ]
+}

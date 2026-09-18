@@ -1,0 +1,83 @@
+{
+  "id": "gopro_drone",
+  "name": "GoPro Drone",
+  "source": "matlab_sim/inputs/drone_config_inputs.m",
+  "axes": "x left, y backward, z up; SI units below",
+  "mass_kg": 0.808819,
+  "cg_m": [
+    2.1000000000000002e-05,
+    -0.00973,
+    0.044844
+  ],
+  "motors_m": [
+    [
+      0.106252,
+      -0.058089,
+      0.007
+    ],
+    [
+      -0.106252,
+      -0.058089,
+      0.007
+    ],
+    [
+      0.093252,
+      0.075381,
+      0.007
+    ],
+    [
+      -0.093252,
+      0.075381,
+      0.007
+    ]
+  ],
+  "motor_names": [
+    "FL",
+    "FR",
+    "RL",
+    "RR"
+  ],
+  "spin_sign": [
+    1,
+    -1,
+    -1,
+    1
+  ],
+  "inertia_kg_m2": [
+    [
+      0.0026390000000000003,
+      -1.7609960000000003e-06,
+      -3.127566e-06
+    ],
+    [
+      -1.7609960000000003e-06,
+      0.0030440000000000003,
+      0.00036346291400000003
+    ],
+    [
+      -3.127566e-06,
+      0.00036346291400000003,
+      0.004027
+    ]
+  ],
+  "max_thrust_N": 13.5,
+  "torque_per_thrust_m": 0.013,
+  "motor_tau_s": 0.05,
+  "timestep_s": 0.002,
+  "gravity": 9.80665,
+  "propeller_radius_m": 0.06477,
+  "ground_clearance_m": 0.12,
+  "visual": {
+    "style": "gopro_drone",
+    "body_size_m": [
+      0.055,
+      0.038,
+      0.145
+    ]
+  },
+  "assumptions": [
+    "Original linear steady thrust is retained unless config/propulsion_curve.json exists.",
+    "Response times are inherited estimates; aerodynamics and contact assumptions live separately in config/physics.json.",
+    "No measured aerodynamic calibration, battery sag, propwash, or rotor inertia."
+  ]
+}

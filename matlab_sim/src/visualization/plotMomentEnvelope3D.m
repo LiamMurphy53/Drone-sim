@@ -1,0 +1,123 @@
+function figureHandle = plotMomentEnvelope3D(envelope)
+%PLOTMOMENTENVELOPE3D Plot an exact fixed-collective moment polytope.
+
+    requiredFields = {'momentVertices_Nm', 'effectiveDimension', ...
+        'boundaryFacets', 'boundaryVertexOrder', 'collectiveThrust_N', ...
+        'momentRange_Nm', 'pureMomentTrimFeasible'};
+    for fieldIndex = 1:numel(requiredFields)
+        if ~isfield(envelope, requiredFields{fieldIndex})
+            error('plotMomentEnvelope3D:InvalidEnvelope', ...
+                'envelope is missing the %s field.', requiredFields{fieldIndex});
+        end
+    end
+
+    vertices = envelope.momentVertices_Nm.';
+    if isfield(envelope, 'normalizedShapeScale_Nm')
+        shapeScale = envelope.normalizedShapeScale_Nm;
+    else
+        shapeScale = max(abs(envelope.momentRange_Nm), [], 2);
+        shapeScale(shapeScale <= 0) = 1;
+    end
+    normalizedVertices = vertices ./ shapeScale.';
+    figureHandle = figure('Color', 'w', ...
+        'Name', 'Fixed-collective 3D moment envelope', ...
+        'Position', [80, 100, 1380, 650]);
+    layout = tiledlayout(figureHandle, 1, 2, ...
+        'TileSpacing', 'compact', 'Padding', 'compact');
+
+    rawAxes = nexttile(layout, 1);
+    drawEnvelope(rawAxes, vertices, envelope, envelope.momentRange_Nm, true);
+    xlabel(rawAxes, 'M_x (N m)');
+    ylabel(rawAxes, 'M_y (N m)');
+    zlabel(rawAxes, 'M_z (N m)');
+    title(rawAxes, 'Physical authority (equal N m scale)');
+    legend(rawAxes, 'Location', 'best');
+
+    normalizedAxes = nexttile(layout, 2);
+    normalizedRange = envelope.momentRange_Nm ./ shapeScale;
+    drawEnvelope(normalizedAxes, normalizedVertices, envelope, ...
+        normalizedRange, false);
+    xlabel(normalizedAxes, 'M_x / s_x');
+    ylabel(normalizedAxes, 'M_y / s_y');
+    zlabel(normalizedAxes, 'M_z / s_z');
+    title(normalizedAxes, { ...
+        'Normalized shape (not absolute authority)', ...
+        sprintf('s_x=%.3f, s_y=%.3f, s_z=%.3f N m', shapeScale)});
+
+    title(layout, sprintf( ...
+        'Exact moment combinations at fixed F_z = %.3f N', ...
+        envelope.collectiveThrust_N));
+end
+
+function drawEnvelope(axesHandle, vertices, envelope, momentRange, showName)
+    hold(axesHandle, 'on');
+    if showName
+        setName = 'Achievable moment set';
+        vertexName = 'Exact vertices';
+    else
+        setName = '';
+        vertexName = '';
+    end
+    if envelope.effectiveDimension == 3
+        patch(axesHandle, 'Vertices', vertices, ...
+            'Faces', envelope.boundaryFacets, ...
+            'FaceColor', [0.10, 0.48, 0.78], 'FaceAlpha', 0.28, ...
+            'EdgeColor', [0.08, 0.25, 0.42], 'LineWidth', 1.0, ...
+            'DisplayName', setName, 'HandleVisibility', visibility(showName));
+    elseif envelope.effectiveDimension == 2
+        patch(axesHandle, 'Vertices', vertices, ...
+            'Faces', envelope.boundaryVertexOrder(:).', ...
+            'FaceColor', [0.10, 0.48, 0.78], 'FaceAlpha', 0.28, ...
+            'EdgeColor', [0.08, 0.25, 0.42], 'LineWidth', 1.3, ...
+            'DisplayName', setName, 'HandleVisibility', visibility(showName));
+    elseif envelope.effectiveDimension == 1
+        order = envelope.boundaryVertexOrder;
+        plot3(axesHandle, vertices(order, 1), vertices(order, 2), ...
+            vertices(order, 3), '-', 'Color', [0.10, 0.48, 0.78], ...
+            'LineWidth', 3, 'DisplayName', setName, ...
+            'HandleVisibility', visibility(showName));
+    end
+
+    scatter3(axesHandle, vertices(:, 1), vertices(:, 2), vertices(:, 3), ...
+        32, 'filled', 'MarkerFaceColor', [0.04, 0.29, 0.50], ...
+        'MarkerEdgeColor', 'w', 'DisplayName', vertexName, ...
+        'HandleVisibility', visibility(showName));
+    if envelope.pureMomentTrimFeasible
+        scatter3(axesHandle, 0, 0, 0, 72, 'o', 'filled', ...
+            'MarkerFaceColor', [0.15, 0.66, 0.25], ...
+            'MarkerEdgeColor', 'k', 'DisplayName', 'Zero-moment trim', ...
+            'HandleVisibility', visibility(showName));
+    else
+        scatter3(axesHandle, 0, 0, 0, 72, 'x', ...
+            'MarkerEdgeColor', [0.82, 0.16, 0.16], 'LineWidth', 2, ...
+            'DisplayName', 'Zero moment (unavailable)', ...
+            'HandleVisibility', visibility(showName));
+    end
+
+    drawMomentAxes(axesHandle, momentRange);
+    grid(axesHandle, 'on');
+    axis(axesHandle, 'equal');
+    view(axesHandle, 38, 25);
+end
+
+function drawMomentAxes(axesHandle, momentRange)
+    maximumMagnitude = max(abs(momentRange), [], 2);
+    maximumMagnitude = max(maximumMagnitude, 1e-6);
+    plot3(axesHandle, [-maximumMagnitude(1), maximumMagnitude(1)], ...
+        [0, 0], [0, 0], ':', 'Color', [0.55, 0.20, 0.20], ...
+        'HandleVisibility', 'off');
+    plot3(axesHandle, [0, 0], ...
+        [-maximumMagnitude(2), maximumMagnitude(2)], [0, 0], ':', ...
+        'Color', [0.20, 0.48, 0.20], 'HandleVisibility', 'off');
+    plot3(axesHandle, [0, 0], [0, 0], ...
+        [-maximumMagnitude(3), maximumMagnitude(3)], ':', ...
+        'Color', [0.32, 0.25, 0.60], 'HandleVisibility', 'off');
+end
+
+function value = visibility(isVisible)
+    if isVisible
+        value = 'on';
+    else
+        value = 'off';
+    end
+end

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "gopro_drone",
+    "name": "GoPro Drone",
+    "description": "Your deadcat frame · original mass and inertia · Acro",
+    "aircraft_path": "res://config/aircraft.json",
+    "physics_path": "res://config/physics.json",
+    "curve_path": "res://config/propulsion_curve.json"
+  },
+  {
+    "id": "dji_fpv",
+    "name": "DJI FPV",
+    "description": "Approximate dynamics · Betaflight Acro controls",
+    "aircraft_path": "res://config/aircraft/dji_fpv.json",
+    "physics_path": "res://config/aircraft/dji_fpv_physics.json",
+    "curve_path": "res://config/aircraft/dji_fpv_propulsion_curve.json"
+  }
+]

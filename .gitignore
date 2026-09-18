@@ -1,0 +1,5 @@
+# MATLAB generated files
+.DS_Store
+*.autosave
+__pycache__/
+*.py[cod]
