@@ -3,11 +3,12 @@
 import argparse, json, socket, subprocess, sys, time
 from pathlib import Path
 from configure_betaflight import BIN, ROOT, RUNTIME, CONFIG_MARKER, configure
+from build_betaflight import ensure_build
 
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--test', action='store_true')
-    parser.add_argument('--scenario', choices=['flight', 'throttle', 'steering'], default='flight',
+    parser.add_argument('--scenario', choices=['flight', 'throttle', 'steering', 'aggressive'], default='flight',
                         help='Live Betaflight scenario to run with --test.')
     parser.add_argument('--test-fps', type=int, choices=[30, 60, 120], default=60,
                         help='Frame rate for --test; physics stays at 500 Hz.')
@@ -18,12 +19,13 @@ def main():
     godot=ROOT/'.tools/Godot.app/Contents/MacOS/Godot'
     if not godot.exists() or not BIN.exists():
         raise SystemExit('Run tools/setup.sh first to download Godot and build Betaflight.')
-    if not CONFIG_MARKER.exists(): configure()
     for port,kind in [(5761,socket.SOCK_STREAM),(9001,socket.SOCK_DGRAM),(9003,socket.SOCK_DGRAM),(9004,socket.SOCK_DGRAM)]:
         try:
             with socket.socket(socket.AF_INET,kind) as sock: sock.bind(('127.0.0.1',port))
         except OSError:
             raise SystemExit(f'Port {port} is already in use. Close the other simulator instance and retry.')
+    ensure_build()
+    if not CONFIG_MARKER.exists(): configure()
     with (RUNTIME/'betaflight.log').open('w') as log:
         bf=subprocess.Popen([str(BIN)],cwd=RUNTIME,stdout=log,stderr=log)
         game=None
@@ -33,7 +35,7 @@ def main():
             command=[str(godot),'--path',str(ROOT)]
             if args.test:
                 script = {'flight':'test_integration.gd', 'throttle':'test_throttle.gd',
-                          'steering':'test_steering.gd'}[args.scenario]
+                          'steering':'test_steering.gd', 'aggressive':'test_aggressive.gd'}[args.scenario]
                 command += ['--headless','--script','res://tests/'+script,'--',args.aircraft,str(args.test_fps)]
             game=subprocess.Popen(command,cwd=ROOT)
             while game.poll() is None:

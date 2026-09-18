@@ -5,6 +5,11 @@ const Link = preload("res://scripts/betaflight.gd")
 const Field = preload("res://scripts/field.gd")
 const Catalog = preload("res://scripts/aircraft_catalog.gd")
 const DroneVisual = preload("res://scripts/drone_visual.gd")
+const FlightClock = preload("res://scripts/flight_clock.gd")
+var flight_clock := FlightClock.new()
+var obstacles: Array[AABB] = []
+var gate_previous := Vector3.ZERO
+var last_input_us := 0
 var aircraft = Aircraft.new()
 var pilot = Pilot.new()
 var link
@@ -60,12 +65,25 @@ func _ready() -> void:
 	Input.joy_connection_changed.connect(_joy_changed)
 	call_deferred("rescan_controller")
 	rate_start = Time.get_ticks_msec()
+	obstacles = field.obstacles.duplicate()
+	gate_previous = Aircraft.TO_GODOT * aircraft.position
+	if flight_clock.start(_flight_step) != OK:
+		message("Could not start the flight simulation. Close and relaunch.")
+
+func _exit_tree() -> void:
+	flight_clock.stop()
+	if link != null: link.close()
 
 func build_drone() -> void:
 	if drone.get_parent() == null: add_child(drone)
 	drone.build(aircraft)
 
 func select_aircraft(index: int, persist := true) -> void:
+	flight_clock.mutex.lock()
+	_select_aircraft(index, persist)
+	flight_clock.mutex.unlock()
+
+func _select_aircraft(index: int, persist: bool) -> void:
 	if index < 0 or index >= profiles.size(): return
 	arm_request = false
 	aircraft = Aircraft.new(true,profiles[index].id)
@@ -86,10 +104,10 @@ func update_aircraft_label() -> void:
 	aircraft_description.text = "%.0f g  ·  %s" % [aircraft.mass*1000,entry.description]
 	DisplayServer.window_set_title("Flight Lab — " + str(aircraft.cfg.name))
 
-func _physics_process(dt: float) -> void:
+func update_pilot(dt: float) -> void:
 	if link == null:
 		return
-	rate_steps += 1
+	last_input_us = Time.get_ticks_usec()
 	var usable: bool = focused and not paused and not aircraft.crashed and Time.get_ticks_msec() > reset_until
 	controls = pilot.update(dt, usable)
 	var actions: Dictionary = pilot.poll_actions()
@@ -102,10 +120,19 @@ func _physics_process(dt: float) -> void:
 		reset_flight()
 	if not usable or not pilot.ready_to_fly():
 		arm_request = false
+
+func _flight_step(dt: float) -> void:
+	# The flight clock owns the lock. All scene/input work stays on the main
+	# thread; this callback uses only the custom plant, sockets and plain data.
+	rate_steps += 1
+	var usable: bool = focused and not paused and not aircraft.crashed and Time.get_ticks_msec() > reset_until
+	if Time.get_ticks_usec() - last_input_us > 250000:
+		usable = false
+		arm_request = false
 	link.update(aircraft, controls, arm_request, dt)
 	if not link.connected and arm_request:
 		arm_request = false
-		message("Betaflight connection lost. Disarmed; wait for reconnection.")
+		message.call_deferred("Betaflight connection lost. Disarmed; wait for reconnection.")
 	var commands := PackedFloat64Array([0,0,0,0])
 	if usable and arm_request and link.connected and link.armed:
 		commands = link.motors
@@ -113,13 +140,15 @@ func _physics_process(dt: float) -> void:
 		var previous: Vector3 = Aircraft.TO_GODOT * aircraft.position
 		aircraft.step(commands, dt)
 		var current: Vector3 = Aircraft.TO_GODOT * aircraft.position
-		if field.hits(previous, current):
-			aircraft.crashed = true
+		for obstacle in obstacles:
+			var expanded := obstacle.grow(0.15)
+			if expanded.has_point(current) or expanded.intersects_segment(previous, current) != null:
+				aircraft.crashed = true
+				break
 		if aircraft.crashed:
 			arm_request = false
 		if link.armed:
 			flight_time += dt
-			check_gate(previous,current)
 
 func check_gate(previous: Vector3, current: Vector3) -> void:
 	var gate: Vector3 = field.gates[next_gate]
@@ -135,8 +164,17 @@ func check_gate(previous: Vector3, current: Vector3) -> void:
 				message("Circuit complete")
 
 func _process(dt: float) -> void:
+	flight_clock.mutex.lock()
+	update_pilot(dt)
+	render_flight(dt)
+	flight_clock.mutex.unlock()
+
+func render_flight(dt: float) -> void:
 	if link == null:
 		return
+	var current: Vector3 = Aircraft.TO_GODOT * aircraft.position
+	if link.armed and arm_request: check_gate(gate_previous, current)
+	gate_previous = current
 	drone.transform = aircraft.render_transform()
 	drone.visible = chase
 	camera.fov = 75 if chase else 100
@@ -198,6 +236,11 @@ func _process(dt: float) -> void:
 		axis_label.text += "%d: %+.2f  " % [i,raw[i]]
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	flight_clock.mutex.lock()
+	handle_key(event)
+	flight_clock.mutex.unlock()
+
+func handle_key(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
 	match event.physical_keycode:
@@ -215,6 +258,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 func toggle_arm() -> void:
+	flight_clock.mutex.lock()
+	_toggle_arm()
+	flight_clock.mutex.unlock()
+
+func _toggle_arm() -> void:
 	if arm_request:
 		arm_request = false
 		return
@@ -234,9 +282,15 @@ func toggle_arm() -> void:
 	settings.visible = false
 
 func reset_flight() -> void:
+	flight_clock.mutex.lock()
+	_reset_flight()
+	flight_clock.mutex.unlock()
+
+func _reset_flight() -> void:
 	arm_request = false
 	pilot.keyboard_throttle = 0
 	aircraft.reset()
+	gate_previous = Aircraft.TO_GODOT * aircraft.position
 	controls = {"roll":0.0,"pitch":0.0,"yaw":0.0,"throttle":0.0}
 	reset_until = Time.get_ticks_msec()+1000
 	flight_time = 0
@@ -245,18 +299,25 @@ func reset_flight() -> void:
 	message("Reset to launch pad. Lower throttle, then arm.")
 
 func _notification(what: int) -> void:
+	if flight_clock == null: return
+	if what != NOTIFICATION_APPLICATION_FOCUS_OUT and what != NOTIFICATION_APPLICATION_FOCUS_IN: return
+	flight_clock.mutex.lock()
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		focused = false
 		arm_request = false
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		focused = true
+	flight_clock.mutex.unlock()
 
 func _joy_changed(_device: int, _connected: bool) -> void:
+	flight_clock.mutex.lock()
 	arm_request = false
 	pilot.refresh_device()
 	message("Controller changed. Verify calibration before arming.")
+	flight_clock.mutex.unlock()
 
 func rescan_controller() -> void:
+	flight_clock.mutex.lock()
 	arm_request = false
 	pilot.refresh_device()
 	var names: Array[String] = []
@@ -266,6 +327,7 @@ func rescan_controller() -> void:
 		message("No USB radio detected by the simulator. Check the data cable and USB Joystick mode.")
 	else:
 		message(pilot.device_name + " connected. Calibrate before flying.")
+	flight_clock.mutex.unlock()
 
 func message(text: String) -> void:
 	notice = text
@@ -292,7 +354,11 @@ func button(text: String, action: Callable) -> Button:
 	b.text = text
 	b.custom_minimum_size.y = 38
 	b.focus_mode = Control.FOCUS_NONE
-	b.pressed.connect(action)
+	b.pressed.connect(func():
+		flight_clock.mutex.lock()
+		action.call()
+		flight_clock.mutex.unlock()
+	)
 	return b
 
 func build_ui() -> void:
@@ -380,12 +446,14 @@ func build_ui() -> void:
 	input_select.add_item("Keyboard practice")
 	input_select.focus_mode = Control.FOCUS_NONE
 	input_select.item_selected.connect(func(index: int):
+		flight_clock.mutex.lock()
 		arm_request = false
 		pilot.radio_mode = index == 0
 		pilot.keyboard_throttle = 0
 		pilot.wizard_step = -1
 		pilot.learning_action = ""
 		pilot.calibration_message = ""
+		flight_clock.mutex.unlock()
 	)
 	box.add_child(input_select)
 	box.add_child(button("Rescan USB controllers",rescan_controller))

@@ -1,8 +1,8 @@
 # Validation — 2026-09-18
 
-The current default is configuration **v6: sharper stick response with zero-throttle steering**. It preserves v5's coast/steering behavior. Earlier AirMode and unconditional motor-cutoff configurations are superseded; see the v5 and v6 follow-ups for the current contract.
+The current default is configuration **v7g: damped control with steady flight updates**. It preserves v6's stick curve and v5's coast/steering behavior. Earlier AirMode and unconditional motor-cutoff configurations are superseded; see the follow-ups below for the current contract.
 
-Tested on this Apple M4 Mac with native arm64 Betaflight 4.5.2 and Godot 4.4.1 using the OpenGL compatibility renderer.
+Current checks run on this Apple M4 Mac with native arm64 Betaflight 4.5.2 and Godot 4.5.2 using the OpenGL compatibility renderer. The early checks below used Godot 4.4.1 where noted.
 
 ## Automated checks
 
@@ -73,7 +73,7 @@ Both 12-assertion continuous throttle/coast tests and both 11-assertion powered-
 
 All 15 aircraft/profile/UI assertions passed, for 123 assertions across the final v5 regression runs. Python syntax and Git whitespace checks passed. The native window was reopened and visually checked: DJI remained selected, the Pocket was detected as calibrated, the new pilot instructions fit, and returning to the flight view worked. No radio calibration or measured-parameter files were modified.
 
-## Stick-response follow-up (v6, current)
+## Stick-response follow-up (v6)
 
 The user identified slow response to stick movement as the remaining floatiness. This change raises roll/pitch RC Rate from 0.80 to 1.00 and yaw from 0.70 to 0.90, reduces expo from 0.20/0.20/0.15 to 0.05 on all axes, and disables adaptive RC smoothing. Super Rate remains 0.60/0.60/0.50, so the response is still curved. PID gains, motor lag, mass, thrust, torque, inertia, the 0.4-second collective ramp, and v5's zero-throttle coast/steering behavior are unchanged.
 
@@ -87,3 +87,32 @@ Before modifying the configuration, both aircraft ran the same instrumented 35%-
 These measurements use native Betaflight 4.5.2 and Godot 4.5.2 at 60 FPS with 500 Hz plant integration and the default estimated aircraft parameters. The steering test now records response delay, angular rate at 100 ms, and rotation at 150 ms, and enforces onset/early-motion bounds alongside direction, countersteering, coasting, and stability checks. This demonstrates a stronger early response in the tested conditions; real hardware calibration still requires measured data and a pilot check.
 
 Final regression runs passed all **132 assertions**: 43 steering/response checks, 12 continuous throttle/coast checks, and 11 powered-flight checks per aircraft. The repeat response runs passed the new early-motion bounds in every direction. There is normal run-to-run variation from asynchronous native-controller scheduling; the table records the first before/after comparison rather than a guaranteed latency. The saved v5 baseline measurements fall below the new early-motion requirement on all twelve model/direction combinations. Python syntax and Git whitespace checks also passed.
+
+
+## Large-input control and timing follow-up (v7g, current)
+
+Large commands exposed problems that the earlier small-input regressions missed. The original v6 DJI stress run peaked near 17.4 rad/s during full roll/pitch reversals despite a requested 8.73 rad/s; powered yaw still reached 2.17 rad/s in the late settling window. The controller connection remained active. These are control-tracking measurements, not evidence that USB packets were being dropped.
+
+The native SITL motor transport also used a mutex as a cross-thread semaphore and skipped individual motor writes while its publication gate was closed. A sensor update could therefore expose a mixture of old and new motor values. The patch always computes a complete motor frame and uses a mutex-protected pending flag only to gate publication. A native C harness extracts and exercises the actual patched motor functions for 100 frames. It passes with the patch and fails on the pinned upstream source. The launcher now rebuilds the controller when the tracked patch changes.
+
+The new tune uses roll/pitch P/I/D = 20/3/50 and yaw = 40/1/30, with no feedforward. Integral relief covers all axes during rapid stick changes. D-min and throttle PID attenuation are disabled so damping does not disappear at high power. Gyro and derivative filters have fixed cutoffs. The v6 rate/expo curve, all physical model parameters, and the low-throttle coast/steering contract are preserved. There is no rate-request slew limiter or clamp on physical rotation.
+
+A 30 FPS stress run still destabilized the tuned controller when physics ran in render-frame batches: GoPro roll reached approximately 24.8 rad/s. The final implementation moves custom rigid-body integration and sensor/RC/motor exchange to a paced 500 Hz worker shared by the application and live tests. UI and input sampling remain on the main thread, with shared state protected by a mutex. Worker stalls do not cause bursts of catch-up packets. Stale UI input disarms after 250 ms. This is a best-effort desktop schedule, not hard real-time operation.
+
+The new aggressive regression establishes normal takeoff, then uses independent airborne fixtures for full-stick holds/reversals on each axis, combined-axis commands, and rapid alternating commands. It covers zero, cruise and full collective power. Each maneuver evolves continuously without resetting physical state. Checks require bounded overshoot, relative tracking RMS below 30% in the hold windows, both rotation directions during rapid reversal, and powered settling below 0.5 rad/s at 1.2–1.7 seconds after release. Off-throttle release intentionally coasts and is not required to stop rotation. Fixture altitude keeps ground impacts from concealing control failures.
+
+The existing steering regression retains all response-delay and early-rotation thresholds. Motor authority is now measured over the entire stick hold, including its initial 100 ms impulse; excluding that impulse incorrectly failed fast, well-damped pitch responses. Tests begin arming at 4.5 seconds instead of 4 seconds to provide margin beyond Betaflight's five-second boot grace period plus the launcher's one-second startup interval.
+
+Final runs passed **242 live-controller assertions**: 55 aggressive checks per aircraft at 30 FPS, plus 43 steering, 12 continuous throttle/coast, and 11 normal-flight checks per aircraft at 60 FPS. There was no controller-link or arming loss in these runs. Both passive coast comparisons matched exactly. The physical model constants were unchanged.
+
+| Final measurement | GoPro Drone | DJI FPV |
+|---|---:|---:|
+| Worst relative tracking RMS in aggressive hold windows | 25.9% | 17.6% |
+| Largest powered settling rate across aggressive cases | 0.342 rad/s | 0.312 rad/s |
+| Mean 35%-stick onset delay over six directions | 44.0 ms | 63.3 ms |
+| Continuous throttle-test peak body rate | 1.872 rad/s | 0.569 rad/s |
+| Continuous throttle-test final settling rate | 0.0147 rad/s | 0.0027 rad/s |
+
+Onset uses the same 0.2 rad/s threshold as v6; that earlier run measured means of 65.3 ms and 97.0 ms. These measurements include controller and modeled motor response, not physical USB latency. DJI's powered full-stick roll/pitch peaks are now about 8.71/8.70 rad/s for an 8.73 rad/s request. The asymmetric GoPro model still overshoots during full-power pitch (approximately 12.14 rad/s), so tracking is not exact. Its tune and physical estimates still need measured data and the user's Pocket flight check.
+
+The native scene/profile suite passed 16 checks, including physical motion while the main thread was deliberately stalled. Five flight-clock checks and the native motor-frame harness also passed, for **264 assertions/tests in the final validation set**. Changed Godot scripts passed parse checks; Python syntax, launcher shell syntax and Git whitespace checks passed. The native flight window was reopened and showed 500 Hz physics with DJI selected. No radio was detected at that final check; saved calibration files were not changed. The setup overlay was closed for the next flight.

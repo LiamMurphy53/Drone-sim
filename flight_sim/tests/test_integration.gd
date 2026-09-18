@@ -1,4 +1,7 @@
 extends SceneTree
+const FlightClock = preload("res://scripts/flight_clock.gd")
+var flight_clock := FlightClock.new()
+var finished := false
 const Aircraft = preload("res://scripts/aircraft.gd")
 const Link = preload("res://scripts/betaflight.gd")
 var aircraft = Aircraft.new()
@@ -22,10 +25,13 @@ func _initialize() -> void:
 	print("Testing aircraft: ",aircraft.cfg.name)
 	link = Link.new()
 	Engine.max_fps = int(arguments[1]) if arguments.size() > 1 else 60
-func _physics_process(dt: float) -> bool:
+	call_deferred("start_clock")
+
+func _flight_step(dt: float) -> bool:
+	if finished: return false
 	elapsed += dt
 	var controls := {"roll":0.0,"pitch":0.0,"yaw":0.0,"throttle":0.0}
-	var arm := elapsed > 4 and elapsed < 14
+	var arm := elapsed > 4.5 and elapsed < 14
 	# Maintain altitude margin through the open-loop attitude maneuvers and the
 	# final second of motor-off fall; this is not an altitude-hold controller.
 	if elapsed > 6 and elapsed < 14: controls.throttle = flight_throttle
@@ -71,11 +77,21 @@ func _physics_process(dt: float) -> bool:
 		check(not aircraft.crashed,"Flight ends without a crash")
 		check(not link.armed,"Betaflight disarmed on request")
 		print("Integration failures: ",failures)
-		link.close()
-		quit(1 if failures else 0)
+		finished = true
+		call_deferred("finish_test")
 	return false
 func check(ok: bool, text: String) -> void:
 	if ok: print("PASS ",text)
 	else:
 		push_error("FAIL "+text)
 		failures+=1
+
+func start_clock() -> void:
+	if flight_clock.start(_flight_step) != OK:
+		push_error("Could not start the steady flight clock")
+		quit(1)
+
+func finish_test() -> void:
+	flight_clock.stop()
+	link.close()
+	quit(1 if failures else 0)

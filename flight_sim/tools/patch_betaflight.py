@@ -41,3 +41,31 @@ p=root/'vendor/betaflight-4.5.2/src/main/target/SITL/sitl.c'
 s=p.read_text()
 if '#include <unistd.h>' not in s:
     p.write_text(s.replace('#include <time.h>', '#include <time.h>\n#include <unistd.h>'))
+
+# Publish complete motor frames. Upstream uses a mutex as a cross-thread
+# semaphore and skips individual motor writes while it is held. A state packet
+# arriving partway through the four writes can therefore publish a mixed frame.
+s=p.read_text()
+if 'FLIGHT_LAB_COMPLETE_MOTOR_FRAME' not in s:
+    replacements = [
+        ('static pthread_mutex_t updateLock;',
+         'static pthread_mutex_t updateLock;\nstatic bool motorUpdatePending = false; // FLIGHT_LAB_COMPLETE_MOTOR_FRAME'),
+        ('    pthread_mutex_unlock(&updateLock); // can send PWM output now\n\n#if defined(SIMULATOR_GYROPID_SYNC)',
+         '    pthread_mutex_lock(&updateLock);\n    motorUpdatePending = true;\n    pthread_mutex_unlock(&updateLock);\n\n#if defined(SIMULATOR_GYROPID_SYNC)'),
+        ('    if (pthread_mutex_trylock(&updateLock) != 0) return;\n\n    if (index < MAX_SUPPORTED_MOTORS)',
+         '    // Only the FC thread writes this frame; always update every motor.\n    if (index < MAX_SUPPORTED_MOTORS)'),
+        ('    pthread_mutex_unlock(&updateLock); // can send PWM output now\n}\n\nstatic void pwmWriteMotorInt',
+         '}\n\nstatic void pwmWriteMotorInt'),
+        ('    // get one "fdm_packet" can only send one "servo_packet"!!\n    if (pthread_mutex_trylock(&updateLock) != 0) return;',
+         '    // Consume one pending sensor update after all motor writes finish.\n'
+         '    pthread_mutex_lock(&updateLock);\n'
+         '    const bool sendFrame = motorUpdatePending;\n'
+         '    motorUpdatePending = false;\n'
+         '    pthread_mutex_unlock(&updateLock);\n'
+         '    if (!sendFrame) return;')]
+    for before,after in replacements:
+        if s.count(before) != 1:
+            raise RuntimeError('Unexpected SITL source while patching complete motor frames')
+        s=s.replace(before,after)
+    p.write_text(s)
+    print('Patched coherent motor-frame publication and cross-thread locking.')

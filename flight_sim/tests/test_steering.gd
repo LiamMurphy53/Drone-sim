@@ -1,4 +1,7 @@
 extends SceneTree
+const FlightClock = preload("res://scripts/flight_clock.gd")
+var flight_clock := FlightClock.new()
+var finished := false
 ## Actual Betaflight and motor-driven motion with zero collective throttle.
 ## Each isolated direction starts from rest in the air. The separate throttle
 ## scenario exercises uninterrupted takeoff, coast and powered recovery.
@@ -38,6 +41,7 @@ func _initialize() -> void:
 	link = Link.new()
 	Engine.max_fps = int(arguments[1]) if arguments.size() > 1 else 60
 	print("Zero-throttle steering: ", aircraft.cfg.name, " at ", Engine.max_fps, " FPS")
+	call_deferred("start_clock")
 
 func finish_case() -> void:
 	print(CASES[case_index][2], ": signed rotation=", response, " rad; motor peak=", motor_peak)
@@ -58,11 +62,12 @@ func finish_case() -> void:
 	check(not aircraft.crashed and aircraft.position.z > 1, CASES[case_index][2] + " stays airborne")
 	checked_cases += 1
 
-func _physics_process(dt: float) -> bool:
+func _flight_step(dt: float) -> bool:
+	if finished: return false
 	elapsed += dt
 	var controls := {"roll":0.0,"pitch":0.0,"yaw":0.0,"throttle":0.0}
 	var end_time := 6.0 + CASE_SECONDS * CASES.size()
-	var arm := elapsed > 4 and elapsed < end_time
+	var arm := elapsed > 4.5 and elapsed < end_time
 	var testing := elapsed >= 6 and elapsed < end_time
 	var phase := 0.0
 	if testing:
@@ -102,18 +107,20 @@ func _physics_process(dt: float) -> bool:
 	var commands: PackedFloat64Array = link.motors if link.armed and arm else PackedFloat64Array([0,0,0,0])
 	aircraft.step(commands, dt)
 	if testing:
+		if not link.armed and not lost_arm: print("ARM LOST at ", elapsed, " flags=", link.arming_flags)
 		lost_arm = lost_arm or not link.armed
 		lost_connection = lost_connection or not link.connected
 		peak_rate = maxf(peak_rate, aircraft.omega.length())
 		var rates := {"roll":-aircraft.omega.y, "pitch":aircraft.omega.x, "yaw":-aircraft.omega.z}
 		if phase >= .4 and phase < 1.0:
+			# Include the initial motor impulse, not just the later steady hold.
+			for value in commands: motor_peak = maxf(motor_peak, value)
 			var signed_rate: float = rates[CASES[case_index][0]] * CASES[case_index][1]
 			if response_delay < 0 and signed_rate >= .2: response_delay = phase - .4
 			if phase < .55: early_rotation += signed_rate * dt
 			if phase < .5: rate_at_100ms = signed_rate
 		if phase >= .5 and phase < 1.0:
 			response += rates[CASES[case_index][0]] * CASES[case_index][1] * dt
-			for value in commands: motor_peak = maxf(motor_peak, value)
 		if phase >= 1.2 and phase < 1.3: before_counter = rates[CASES[case_index][0]] * CASES[case_index][1]
 		if phase >= 1.5 and phase < 1.6: after_counter = rates[CASES[case_index][0]] * CASES[case_index][1]
 		if (phase >= 1.0 and phase < 1.3) or phase >= 1.6:
@@ -134,8 +141,8 @@ func _physics_process(dt: float) -> bool:
 		check(peak_rate < 3, "Moderate steering remains bounded on every axis")
 		check(not link.armed, "Disarms on request")
 		print("Zero-throttle steering failures: ", failures)
-		link.close()
-		quit(1 if failures else 0)
+		finished = true
+		call_deferred("finish_test")
 	return false
 
 func check(ok: bool, label: String) -> void:
@@ -143,3 +150,13 @@ func check(ok: bool, label: String) -> void:
 	else:
 		push_error("FAIL " + label)
 		failures += 1
+
+func start_clock() -> void:
+	if flight_clock.start(_flight_step) != OK:
+		push_error("Could not start the steady flight clock")
+		quit(1)
+
+func finish_test() -> void:
+	flight_clock.stop()
+	link.close()
+	quit(1 if failures else 0)

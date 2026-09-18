@@ -37,6 +37,13 @@ func run() -> void:
 	check(invalid.configuration_error!="", "An unknown profile raises an arming-blocking configuration error")
 	var scene = load("res://main.tscn").instantiate()
 	root.add_child(scene)
+	scene.flight_clock.mutex.lock()
+	scene.aircraft.position.z = 5
+	scene.flight_clock.mutex.unlock()
+	# Exercise the actual scene callback with its renderer/main thread stalled.
+	OS.delay_msec(120)
+	scene.flight_clock.stop()
+	check(scene.rate_steps >= 30 and scene.aircraft.position.z < 4.99, "Scene physics continues during a stalled frame")
 	scene.set_process(false)
 	scene.set_physics_process(false)
 	scene.select_aircraft(0,false)
@@ -59,7 +66,6 @@ func run() -> void:
 	check(scene.drone.get_child_count()==children, "Repeated switches rebuild visuals without accumulating meshes")
 	scene.select_aircraft(0,false)
 	check(scene.aircraft.cfg.name=="GoPro Drone" and absf(scene.aircraft.mass-.808819)<1e-8, "Switching back restores the original GoPro model")
-	scene.link.close()
 	scene.free()
 	print("Aircraft profile checks: ",count,"; failures: ",failures)
 	quit(1 if failures else 0)

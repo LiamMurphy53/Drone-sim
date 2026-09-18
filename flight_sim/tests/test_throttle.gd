@@ -1,4 +1,7 @@
 extends SceneTree
+const FlightClock = preload("res://scripts/flight_clock.gd")
+var flight_clock := FlightClock.new()
+var finished := false
 ## Native Betaflight regression for centered-stick coast and power return.
 ## The reference plant follows the same physical state with zero motor commands.
 const Aircraft = preload("res://scripts/aircraft.gd")
@@ -38,6 +41,7 @@ func _initialize() -> void:
 	link = Link.new()
 	Engine.max_fps = int(arguments[1]) if arguments.size() > 1 else 60
 	print("Centered-stick coast test: ", aircraft.cfg.name, " at ", Engine.max_fps, " FPS")
+	call_deferred("start_clock")
 
 func start_passive_reference() -> void:
 	passive = Aircraft.new(false, aircraft.profile_id)
@@ -51,10 +55,11 @@ func start_passive_reference() -> void:
 	coast_started = elapsed
 	coast_intervals += 1
 
-func _physics_process(dt: float) -> bool:
+func _flight_step(dt: float) -> bool:
+	if finished: return false
 	elapsed += dt
 	var controls := {"roll":0.0,"pitch":0.0,"yaw":0.0,"throttle":0.0}
-	var arm := elapsed > 4 and elapsed < 29
+	var arm := elapsed > 4.5 and elapsed < 29
 	if elapsed >= 6 and elapsed < 10: controls.throttle = takeoff
 	if elapsed >= 10 and elapsed < 29: controls.throttle = cruise
 	# Pilot steering through normal RC channels establishes upright flight.
@@ -115,8 +120,8 @@ func _physics_process(dt: float) -> bool:
 		check(recovery_rate < .2, "Rotation settles after powered steering")
 		check(not link.armed, "Disarms on request")
 		print("Centered-stick coast test failures: ",failures)
-		link.close()
-		quit(1 if failures else 0)
+		finished = true
+		call_deferred("finish_test")
 	return false
 
 func check(ok: bool, label: String) -> void:
@@ -124,3 +129,13 @@ func check(ok: bool, label: String) -> void:
 	else:
 		push_error("FAIL " + label)
 		failures += 1
+
+func start_clock() -> void:
+	if flight_clock.start(_flight_step) != OK:
+		push_error("Could not start the steady flight clock")
+		quit(1)
+
+func finish_test() -> void:
+	flight_clock.stop()
+	link.close()
+	quit(1 if failures else 0)
