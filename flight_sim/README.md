@@ -56,7 +56,9 @@ The added coefficients are provisional, not measured for either aircraft. `confi
 
 Propwash/vortex-ring effects, battery sag, rotor gyroscopic inertia, sensor noise and a hardware-validated tune remain future work. Throttle percentage is the radio input through Betaflight's throttle processing, not a direct motor-command or thrust percentage. A static thrust sweep improves propulsion calibration but does not validate aerodynamic behavior or the controller tune by itself.
 
-The starter Betaflight tune is deliberately gentle for the inherited 50 ms motor lag. The stock QUADX mixer uses standard yaw direction, matched to the plant's spin signs and the bridge's FLU rate convention. The physical deadcat asymmetry is in the plant; Betaflight's controller must compensate for it. Only Acro is exposed. Actual hardware firmware version, tune, rates and mixer should be matched later.
+The starter Betaflight tune remains gentle and provisional for the inherited 50 ms motor lag. Anti-gravity's extra PID gain during throttle changes is reduced to match this tune; the stock boost caused severe rotation after throttle cuts. AirMode stays enabled for control at zero throttle. Centered sticks still stop rotation rather than leveling the drone, and cutting throttle still allows it to fall.
+
+The stock QUADX mixer uses standard yaw direction, matched to the plant's spin signs and the bridge's FLU rate convention. The physical deadcat asymmetry is in the plant; Betaflight's controller must compensate for it. Only Acro is exposed. Actual hardware firmware version, tune, rates and mixer should be matched later. The versioned private simulator configuration updates automatically on launch; Pocket calibration is stored separately and is preserved.
 
 Import updated legacy inputs with:
 
@@ -91,9 +93,11 @@ From `flight_sim`:
 python3 tests/test_thrust_import.py
 python3 tools/launch.py --test
 python3 tools/launch.py --test --aircraft dji_fpv
+python3 tools/launch.py --test --scenario throttle
+python3 tools/launch.py --test --scenario throttle --aircraft dji_fpv
 ```
 
-The suites cover imported units, free fall, hover trim, rotor response, dissipative drag, angular momentum/energy conservation, timestep convergence, ground contact, measurements, and aircraft switching. The two live tests run actual Betaflight and check arming, takeoff, all three commanded rotation directions, controlled response and disarming. Run profile/UI and live integration tests with other simulator instances closed. The legacy comparisons explicitly disable newer aerodynamic effects and select the old thrust-lag model; the dynamics suite tests the new defaults.
+The suites cover imported units, free fall, hover trim, rotor response, dissipative drag, angular momentum/energy conservation, timestep convergence, ground contact, measurements, and aircraft switching. The live tests run actual Betaflight and check arming, takeoff, all three commanded rotation directions, controlled response and disarming. The throttle scenario uses unmeasured default aircraft parameters for a reproducible regression: abrupt zero/low-throttle cuts after roll/pitch inputs, a roll command at zero throttle, and restored throttle. An automated pilot steers upright through ordinary RC inputs between maneuvers; this steering stops before each maneuver and throughout the low-throttle and settling windows. The test never resets attitude or clamps angular rates. Live tests default to 60 rendered frames per second with 500 Hz physics; `--test-fps 30` or `--test-fps 120` exercises different frame batching. Run profile/UI and live integration tests with other simulator instances closed. The legacy comparisons explicitly disable newer aerodynamic effects and select the old thrust-lag model; the dynamics suite tests the new defaults.
 
 Open `project.godot` with the bundled Godot editor to develop the scene. Runtime meshes create the field, aircraft and interface; no asset downloads are needed while flying.
 

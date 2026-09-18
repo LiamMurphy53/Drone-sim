@@ -7,6 +7,10 @@ from configure_betaflight import BIN, ROOT, RUNTIME, CONFIG_MARKER, configure
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--test', action='store_true')
+    parser.add_argument('--scenario', choices=['flight', 'throttle'], default='flight',
+                        help='Live Betaflight scenario to run with --test.')
+    parser.add_argument('--test-fps', type=int, choices=[30, 60, 120], default=60,
+                        help='Frame rate for --test; physics stays at 500 Hz.')
     profiles=json.loads((ROOT/'config/aircraft_catalog.json').read_text())
     parser.add_argument('--aircraft', choices=[p['id'] for p in profiles], default='gopro_drone',
                         help='Aircraft for --test. Interactive flight uses the saved in-app selection.')
@@ -27,7 +31,9 @@ def main():
             time.sleep(1)
             if bf.poll() is not None: raise RuntimeError('Betaflight exited; see runtime/betaflight.log')
             command=[str(godot),'--path',str(ROOT)]
-            if args.test: command += ['--headless','--script','res://tests/test_integration.gd','--',args.aircraft]
+            if args.test:
+                script = 'test_throttle.gd' if args.scenario == 'throttle' else 'test_integration.gd'
+                command += ['--headless','--script','res://tests/'+script,'--',args.aircraft,str(args.test_fps)]
             game=subprocess.Popen(command,cwd=ROOT)
             while game.poll() is None:
                 if bf.poll() is not None:

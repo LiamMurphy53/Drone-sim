@@ -21,7 +21,7 @@ func _initialize() -> void:
 	if aircraft.profile_id == "dji_fpv": flight_throttle = .46
 	print("Testing aircraft: ",aircraft.cfg.name)
 	link = Link.new()
-	Engine.max_fps = 120
+	Engine.max_fps = int(arguments[1]) if arguments.size() > 1 else 60
 func _physics_process(dt: float) -> bool:
 	elapsed += dt
 	var controls := {"roll":0.0,"pitch":0.0,"yaw":0.0,"throttle":0.0}
