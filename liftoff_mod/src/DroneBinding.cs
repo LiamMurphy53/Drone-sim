@@ -26,6 +26,7 @@ namespace GoProGeometry
         Vector3 targetCg, targetInertia;
         Quaternion targetRotation;
         float targetMass;
+        internal ControllerAdapter Control { get; private set; }
 
         internal static DroneBinding TryFind()
         {
@@ -108,6 +109,12 @@ namespace GoProGeometry
                 }
                 Body.mass=targetMass; Body.centerOfMass=targetCg;
                 Body.inertiaTensor=targetInertia; Body.inertiaTensorRotation=targetRotation;
+                var r=Matrix4x4.Rotate(inertiaRotation);
+                var stockBodyInertia=new Vector3(
+                    r.m00*r.m00*inertia.x+r.m01*r.m01*inertia.y+r.m02*r.m02*inertia.z,
+                    r.m10*r.m10*inertia.x+r.m11*r.m11*inertia.y+r.m12*r.m12*inertia.z,
+                    r.m20*r.m20*inertia.x+r.m21*r.m21*inertia.y+r.m22*r.m22*inertia.z);
+                Control=new ControllerAdapter(Controller,p,stockBodyInertia); Control.Install(Props);
                 Applied=true; ForceCalls=0; ProfileName=p.name;
                 Verify();
             }
@@ -116,6 +123,7 @@ namespace GoProGeometry
         internal void Verify()
         {
             if(!Applied) return;
+            Control.Verify();
             if(!IsAlive || Math.Abs(Body.mass-targetMass)>1e-5f || (Body.centerOfMass-targetCg).magnitude>1e-5f ||
                (Body.inertiaTensor-targetInertia).magnitude>1e-6f || Quaternion.Angle(Body.inertiaTensorRotation,targetRotation)>0.1f ||
                // Large Liftoff maps lose sub-millimeter precision in world/local conversions.
@@ -125,12 +133,13 @@ namespace GoProGeometry
         internal void Restore()
         {
             Applied=false; ForceCalls=0;
+            Control?.Restore(); Control=null;
             if(!Body) return;
             foreach(var pair in originalPositions) if(pair.Key) pair.Key.localPosition=pair.Value;
             Body.mass=mass; Body.centerOfMass=cg; Body.inertiaTensor=inertia; Body.inertiaTensorRotation=inertiaRotation;
         }
         internal string Report() => "mass="+Body.mass.ToString("F6")+" kg; CG="+Body.centerOfMass.ToString("F6")+"; principal inertia="+Body.inertiaTensor.ToString("F6")+
-            "; rotation="+Body.inertiaTensorRotation+"\n"+string.Join("\n",Props.Select((p,i)=>new[]{"FL","FR","RL","RR"}[i]+"="+Point(p).ToString("F6")));
+            "; rotation="+Body.inertiaTensorRotation+"; controller="+(Control?.Report??"stock")+"\n"+string.Join("\n",Props.Select((p,i)=>new[]{"FL","FR","RL","RR"}[i]+"="+Point(p).ToString("F6")));
         static Vector3 Vector(double[] a)=>new Vector3((float)a[0],(float)a[1],(float)a[2]);
         static Vector3 Column(double[,] a,int j)=>new Vector3((float)a[0,j],(float)a[1,j],(float)a[2,j]);
     }

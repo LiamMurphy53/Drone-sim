@@ -24,7 +24,7 @@ var fl=GeometryMath.UnityPoint(profile.motorsM);
 Check(fl[0]<0 && fl[2]>0,"front-left stays front-left in Unity");
 var cg=GeometryMath.UnityPoint(profile.centerOfMassM);
 double[] moment=new double[3];
-for(int i=0;i<4;i++){var m=GeometryMath.Moment(GeometryMath.UnityPoint(profile.motorsM,i*3),cg,1);for(int k=0;k<3;k++)moment[k]+=m[k];}
+for(int i=0;i<4;i++){var leverMoment=GeometryMath.Moment(GeometryMath.UnityPoint(profile.motorsM,i*3),cg,1);for(int k=0;k<3;k++)moment[k]+=leverMoment[k];}
 Check(Math.Abs(moment[0]-.073504)<1e-7,"deadcat equal-thrust pitch moment preserves CG offset");
 Check(Math.Abs(moment[2]-.000084)<1e-7,"small lateral CG offset is preserved");
 var a=GeometryMath.Moment(new double[]{.1,0,0},new double[3],1);
@@ -37,3 +37,34 @@ Reject(p=>p.inertiaKgM2[1]=1,"reject nonsymmetric inertia");
 Reject(p=>p.inertiaKgM2=new float[]{.01f,0,0,0,.001f,0,0,0,.001f},"reject impossible principal moments");
 Reject(p=>p.axes="right_forward_up","reject ambiguous coordinate convention");
 Reject(p=>p.motorsM[0]=-p.motorsM[0],"reject incorrect motor order");
+var mixer=MotorAllocator.FromProfile(profile);
+var points=Enumerable.Range(0,4).Select(i=>GeometryMath.UnityPoint(profile.motorsM,3*i)).ToArray();
+var f=new double[4];
+(double pitch,double roll) Moments(double[] output) => (
+    Enumerable.Range(0,4).Sum(i=>GeometryMath.Moment(points[i],cg,output[i])[0]),
+    Enumerable.Range(0,4).Sum(i=>GeometryMath.Moment(points[i],cg,output[i])[2]));
+double hover=profile.massKg*9.80665;
+mixer.Allocate(hover,0,0,0,6,f);
+var m=Moments(f);
+Check(Math.Abs(f.Sum()-hover)<1e-10 && Math.Abs(m.pitch)+Math.Abs(m.roll)<1e-12,"hover balances the actual CG without moving it");
+Check(Math.Abs((f[0]+f[1])/hover-.63768)<.0001,"front/rear hover split is approximately 64/36");
+mixer.Allocate(hover,.08,-.12,0,6,f);m=Moments(f);
+Check(Math.Abs(m.pitch-.08)+Math.Abs(m.roll+.12)<1e-10,"physical pitch/roll demands retain their sign and magnitude");
+mixer.Allocate(24,.08,-.12,.24,6,f);m=Moments(f);
+Check(f.All(x=>x>=.24 && x<=6) && Math.Abs(m.pitch-.08)+Math.Abs(m.roll+.12)<1e-9 && f.Sum()<24,"full throttle preserves attitude authority by reducing collective");
+double scale=mixer.Allocate(hover,20,-10,.24,6,f);m=Moments(f);
+Check(scale<1 && f.All(x=>x>=.24 && x<=6) && Math.Abs(m.pitch-20*scale)+Math.Abs(m.roll+10*scale)<1e-8,"impossible moments are reduced together within motor limits");
+mixer.Allocate(-hover,.03,.04,-6,-.24,f);m=Moments(f);
+Check(f.All(x=>x<=-.24 && x>=-6) && Math.Abs(m.pitch-.03)+Math.Abs(m.roll-.04)<1e-10,"reverse thrust respects bounds and moment signs");
+var symmetric=new MotorAllocator(new[]{new[]{-.1,0,.1},new[]{.1,0,.1},new[]{-.1,0,-.1},new[]{.1,0,-.1}},new double[3]);
+symmetric.Allocate(8,0,0,0,6,f);
+Check(f.All(x=>Math.Abs(x-2)<1e-12),"symmetric geometry gives equal hover thrust");
+bool invalid=false;try{new MotorAllocator(points,new[]{1.0,0,0});}catch(ArgumentException){invalid=true;}
+Check(invalid,"reject CG outside controllable motor footprint");
+var random=new Random(1487);
+for(int i=0;i<1000;i++) {
+    double pitch=random.NextDouble()*4-2,roll=random.NextDouble()*4-2;
+    scale=mixer.Allocate(random.NextDouble()*30,pitch,roll,.24,6,f);m=Moments(f);
+    if(!f.All(x=>x>=.24 && x<=6) || Math.Abs(m.pitch-pitch*scale)+Math.Abs(m.roll-roll*scale)>1e-8) throw new Exception("allocation sweep failed");
+}
+Check(true,"1000 mixed throttle/attitude requests preserve bounded physical moments");

@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup>
-  <ItemGroup><Compile Include="../src/Geometry.cs" Link="Geometry.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../src/Geometry.cs" Link="Geometry.cs" /><Compile Include="../src/MotorAllocator.cs" Link="MotorAllocator.cs" /></ItemGroup>
 </Project>

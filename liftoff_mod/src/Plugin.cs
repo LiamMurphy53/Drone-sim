@@ -36,8 +36,9 @@ namespace GoProGeometry
                 LoadProfile();
                 if(typeof(FlightManager).Module.ModuleVersionId.ToString()!=DroneBinding.SupportedModule)
                     throw new InvalidOperationException("Unverified Liftoff build. Geometry changes are disabled.");
-                PhysicsCheck.Run(Logger);
+                PhysicsCheck.Run(Logger,JsonUtility.FromJson<GeometryProfile>(File.ReadAllText(shipped)));
                 patches=new Harmony("com.goprodrone.geometry");
+                ControllerAdapter.InstallPatch(patches);
                 patches.Patch(typeof(Propeller).GetMethod("ApplyControllerForceAtPropeller"),prefix:new HarmonyMethod(typeof(Plugin).GetMethod(nameof(ObserveForce),BindingFlags.NonPublic|BindingFlags.Static)));
                 Logger.LogInfo("Geometry Lab ready; Liftoff 1.7.5 Mac. Stock physics selected until Apply.");
             }
@@ -47,7 +48,7 @@ namespace GoProGeometry
         {
             if(Input.GetKeyDown(KeyCode.F8)) visible=!visible;
             if(visible && Input.GetKeyDown(KeyCode.F9) && profile!=null && drone!=null) Act(Apply);
-            if(visible && Input.GetKeyDown(KeyCode.F10) && drone!=null && drone.CanEdit) Act(()=>{drone.Restore();status="Stock geometry and mass properties restored.";Logger.LogInfo("Restored stock drone:\n"+drone.Report());});
+            if(visible && Input.GetKeyDown(KeyCode.F10) && drone!=null && drone.CanEdit) Act(()=>{drone.Restore();status="Stock geometry, mass properties and controller restored.";Logger.LogInfo("Restored stock drone:\n"+drone.Report());});
             if(Time.realtimeSinceStartup<nextScan) return;
             nextScan=Time.realtimeSinceStartup+0.5f;
             try
@@ -68,11 +69,25 @@ namespace GoProGeometry
                 {
                     if(DroneBinding.IsOnline()) throw new InvalidOperationException("Online session detected; custom geometry restored to stock.");
                     drone.Verify();
-                    if(drone.ForceCalls>0 && lastReportedCalls==0) Logger.LogInfo("Verified live Liftoff propeller-force calls using the custom motor positions.");
+                    if(drone.ForceCalls>0 && lastReportedCalls==0) Logger.LogInfo("Verified live Liftoff propeller-force calls using the custom motor positions; geometry mixer steps="+drone.Control.MixCalls+".");
                     lastReportedCalls=drone.ForceCalls;
                 }
             }
             catch(Exception e) { if(drone!=null && drone.Applied) drone.Restore(); Fail(e); }
+        }
+        static void BeforeControlStep(Component __instance)
+        {
+            var d=Instance?.drone;
+            if(d!=null && d.Applied && d.Controller==__instance) {
+                try { d.Control.BeforeStep(); } catch(Exception e) { d.Restore(); Instance.Fail(e); }
+            }
+        }
+        static void MixControlStep(Component controller,float maximum)
+        {
+            var d=Instance?.drone;
+            if(d==null || !d.Applied || d.Controller!=controller) return;
+            try { d.Control.Mix(maximum); }
+            catch(Exception e) { d.Restore(); Instance.Fail(e); }
         }
         static void ObserveForce(Propeller __instance)
         {
@@ -99,7 +114,7 @@ namespace GoProGeometry
         void Apply()
         {
             var p=Edited(); drone.Apply(p); profile=p; lastReportedCalls=0;
-            status="GoPro geometry applied. Waiting for propeller-force calls.";
+            status="GoPro geometry and controller applied. Ready to fly.";
             Logger.LogInfo("Applied "+p.name+":\n"+drone.Report());
             File.WriteAllText(Path.Combine(Path.GetDirectoryName(profilePath),"last-applied.txt"),DateTime.UtcNow.ToString("O")+"\n"+drone.Report());
         }
@@ -123,7 +138,7 @@ namespace GoProGeometry
             GUI.Label(new Rect(32,116,590,28),"Flying: "+(applied?drone.ProfileName+" geometry":"Stock Liftoff drone"));
             GUI.enabled=profile!=null && drone!=null && drone.CanEdit;
             if(GUI.Button(new Rect(32,149,274,34),"Apply GoPro Drone / edited geometry")) Act(Apply);
-            if(GUI.Button(new Rect(318,149,298,34),"Restore stock drone")) Act(()=>{drone.Restore();status="Stock geometry and mass properties restored.";Logger.LogInfo("Restored stock drone:\n"+drone.Report());});
+            if(GUI.Button(new Rect(318,149,298,34),"Restore stock drone")) Act(()=>{drone.Restore();status="Stock geometry, mass properties and controller restored.";Logger.LogInfo("Restored stock drone:\n"+drone.Report());});
             GUI.enabled=profile!=null;
             GUI.Label(new Rect(32,195,590,24),"Motor centers (mm)      Left +X        Back +Y           Up +Z");
             for(int row=0;row<4;row++)
@@ -134,13 +149,13 @@ namespace GoProGeometry
             GUI.Label(new Rect(32,372,130,28),"Mass (grams)"); massText=GUI.TextField(new Rect(176,372,130,28),massText??"");
             GUI.Label(new Rect(32,409,130,28),"CG (mm X/Y/Z)");
             for(int i=0;i<3;i++) cgText[i]=GUI.TextField(new Rect(176+142*i,409,130,28),cgText[i]??"");
-            GUI.Label(new Rect(32,448,586,46),"Inertia comes from the profile JSON and stays fixed when motors move.\nMotors/props, controller, drag and frame collisions remain Liftoff's.");
+            GUI.Label(new Rect(32,448,586,46),"Inertia comes from the profile JSON and stays fixed when motors move.\nPropulsion, drag and frame collisions remain Liftoff's.");
             if(GUI.Button(new Rect(32,504,178,30),"Save edits")) Act(()=>{var p=Edited();File.WriteAllText(profilePath,JsonUtility.ToJson(p,true));status="Profile saved. Press Apply to fly these values.";});
             if(GUI.Button(new Rect(220,504,190,30),"Reload profile JSON")) Act(()=>{LoadProfile();status="Profile loaded. Press Apply to use it.";});
             if(GUI.Button(new Rect(420,504,196,30),"Open profile folder")) Application.OpenURL(new Uri(Path.GetDirectoryName(profilePath)).AbsoluteUri);
             GUI.enabled=true;
             GUI.Label(new Rect(32,546,584,54),applied && drone.ForceCalls>0 ? "LIVE: "+drone.ForceCalls+" Liftoff motor-force calls observed at custom positions." : status);
-            GUI.Label(new Rect(32,612,584,52),"Geometry experiment, not a calibrated GoPro Drone model.\nZetaFlight's symmetric mixer and simplified yaw remain active.");
+            GUI.Label(new Rect(32,612,584,52),"Geometry experiment, not a calibrated GoPro Drone model.\n"+(applied?"Geometry-aware mixer + controller active. Yaw remains simplified.":"Apply includes geometry-aware mixing and controller compensation."));
         }
         void OnDestroy() { if(subscribedManager) subscribedManager.onDroneResetStart-=BeforeReset; drone?.Restore(); patches?.UnpatchSelf(); if(Instance==this) Instance=null; }
     }

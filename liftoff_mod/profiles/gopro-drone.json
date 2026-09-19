@@ -33,5 +33,5 @@
     0.00036346291400000003,
     0.004027
   ],
-  "notes": "Geometry and mass properties imported from the original MATLAB/CAD model. Motor order FL, FR, RL, RR. Inertia is about the center of mass. Liftoff propulsion, drag, frame collisions and flight controller remain the selected stock setup. Geometry edits do not automatically recalculate mass properties."
+  "notes": "Geometry and mass properties imported from the original MATLAB/CAD model. Motor order FL, FR, RL, RR. Inertia is about the center of mass. Liftoff propulsion, drag and frame collisions remain the selected stock setup. Apply adds geometry-aware pitch/roll mixing and inertia-scaled controller gains while retaining stock input rates and simplified yaw. Geometry edits do not automatically recalculate mass properties."
 }

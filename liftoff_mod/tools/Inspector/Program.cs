@@ -2,8 +2,25 @@ using Mono.Cecil;
 using System.Text.Json;
 
 // Read-only inspection. Never loads or executes game code.
-if (args.Length != 1) throw new ArgumentException("Pass the installed Assembly-CSharp.dll path.");
+if (args.Length < 1) throw new ArgumentException("Pass the installed Assembly-CSharp.dll path, optionally a metadata token.");
 using var assembly = AssemblyDefinition.ReadAssembly(args[0]);
+if (args.Length > 1)
+{
+    var member = args[1].StartsWith("hash:") ? (IMetadataTokenProvider)assembly.MainModule.Types.Single(t => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(t.Name))).ToLowerInvariant().StartsWith(args[1].Substring(5))) : assembly.MainModule.LookupToken(Convert.ToInt32(args[1], 16));
+    if (member is MethodDefinition method)
+    {
+        Console.WriteLine(method.FullName);
+        foreach (var variable in method.Body.Variables) Console.WriteLine($"LOCAL {variable.Index}: {variable.VariableType}");
+        foreach (var instruction in method.Body.Instructions) Console.WriteLine(instruction);
+    }
+    if (member is TypeDefinition type)
+    {
+        Console.WriteLine(type.FullName);
+        foreach (var f in type.Fields) Console.WriteLine($"FIELD {f.MetadataToken.ToInt32():x8}: {f.FullName}");
+        foreach (var m in type.Methods) Console.WriteLine($"METHOD {m.MetadataToken.ToInt32():x8}: {m.FullName}");
+    }
+    return;
+}
 var needles = new[] { "ApplyControllerForceAtPropeller", "AddForceAtPosition", "inertiaTensor", "centerOfMass", "get_CurrentDrone" };
 IEnumerable<TypeDefinition> Walk(IEnumerable<TypeDefinition> types) {
     foreach (var t in types) { yield return t; foreach (var n in Walk(t.NestedTypes)) yield return n; }
