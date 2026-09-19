@@ -4,31 +4,99 @@ Experimental Mac mod for comparing the GoPro Drone's deadcat motor layout inside
 
 This is a working development prototype, not a calibrated simulation of the finished aircraft. Read the limitations below before using its handling to make design decisions.
 
-## Start on this Mac
+## Install on another computer
 
-1. Keep Steam open and signed in. Quit any already-running Liftoff instance.
-2. Double-click **Launch Liftoff Geometry Lab.command**.
-3. Acknowledge Liftoff's external modifications notice. The game disables certain competitive features while mods are loaded; this mod does not alter that protection.
-4. Open **Single Player → Free Flight**, choose a conventional four-motor drone with suitable motors/props, and stop/reset it on the ground.
-5. Open the overlay with **F8** (or its top-left button), then click **Apply GoPro Drone / edited geometry**.
-6. Fly using Liftoff's own controller configuration. **Restore stock drone** returns to the original geometry, mass properties, and native PID objects (including their prior state). A reset clears the override; apply it again after resetting.
+**The installer currently supports macOS only.** It has been tested on an Apple Silicon Mac. Setup also includes Intel Mac dependencies, but an Intel Mac installation has not been tested. Windows needs its own loader/launcher and a compatibility check against the Windows game files; these Mac scripts will not install it on Windows.
 
-Use a four-motor drone with the supported ZetaFlight controller. A DJI FPV configuration has also been used for the integration check, but its selected propulsion and drag are still inherited. The prototype checks for the inspected ZetaFlight controller and refuses unsupported builds. The overlay's **LIVE** status means the game's propeller force method has been called on the modified motors; it is not a certificate of real-world accuracy.
+### 1. Prepare the Mac
 
-Press F8 to hide the editor while flying. With the editor open, F9 applies and F10 restores stock (only while stopped). Liftoff also uses F9 for its PID graph display; use the on-screen Apply button to avoid toggling that display. To run without the mod, quit the game and launch Liftoff normally from Steam. No installed game binaries or Steam launch settings are changed.
+- Install your own copy of **Liftoff through Steam**. Launch it normally once, then quit the game. Keep Steam open and signed in.
+- The supported game is **Liftoff 1.7.5 Mac, Steam build 25118475**. The mod checks the exact game assembly, not just the displayed version. A different build disables the mod until its compatibility is checked; rebuilding alone does not make a newer game compatible.
+- Install **Python 3** if needed, using the [official macOS installer](https://www.python.org/downloads/macos/). In Terminal, `python3 --version` should report Python 3. Setup does not install Python for you.
+- On **Apple Silicon**, the launcher needs Rosetta to run the game in Intel mode. Follow [Apple's Rosetta instructions](https://support.apple.com/en-ca/102527) if it is not available. An Intel Mac does not need Rosetta.
+- Keep an internet connection available for the first setup. The scripts download their own .NET SDK and BepInEx loader; you do not need to install those separately.
 
-## Fresh checkout
+### 2. Download and build the mod
 
-Install Liftoff through Steam and run **Setup Geometry Lab.command** once. Setup downloads pinned, checksum-verified dependencies into the ignored `.tools` folder, compiles the mod against your own game installation, runs the geometry checks, and stages the plugin. Requires Python 3 and Apple's Rosetta on Apple Silicon. The game is deliberately launched in Intel mode for the tested BepInEx/MonoMod combination; the build tools run natively.
+1. Open [the Drone-sim repository](https://github.com/LiamMurphy53/Drone-sim), choose **Code → Download ZIP**, and unzip it. You can also clone the repository with Git.
+2. Keep the extracted project in a folder you can write to, such as Documents. Open its **liftoff_mod** folder. You do not need to set up the separate `flight_sim` or `matlab_sim` folders to use this mod.
+3. Double-click **Setup Geometry Lab.command**. A Terminal window opens while setup downloads the dependencies, checks their hashes, builds the plugin against your installed Liftoff, and runs the math tests.
+4. Wait for **“Geometry Lab built and staged.”** If setup reports an error, use the troubleshooting section below before launching.
 
-For a non-default Steam library:
+If double-clicking the setup file does not run it, open Terminal, type `cd ` (including the space), drag the **liftoff_mod** folder into the window, and press Return. Then run:
+
+```sh
+python3 tools/setup_mac.py
+```
+
+Run all commands in this guide from inside **liftoff_mod**. The repository contains source code, not the downloaded tools or a ready-built plugin. First setup creates these locally in `.tools/`; you do not need to copy them from another computer. Setup does not modify `Liftoff.app`, Steam launch settings, or global .NET installations.
+
+### 3. Connect the radio and launch
+
+1. Connect the radio before launching. For the **RadioMaster Pocket**, use the **top USB-C data port**, choose **USB Joystick** on the radio, and configure/calibrate it in Liftoff's controller settings.
+2. Keep Steam open and signed in, and quit any already-running Liftoff instance.
+3. Double-click **Launch Liftoff Geometry Lab.command**. From Terminal, the equivalent is:
+
+   ```sh
+   python3 tools/launch_mac.py
+   ```
+
+4. Acknowledge Liftoff's external modifications notice. The game disables certain competitive features while mods are loaded; this mod does not alter that protection.
+5. Open **Single Player → Free Flight**, choose a four-motor drone using **ZetaFlight**, and leave it stopped on the ground. Acro is the intended test mode. A DJI FPV configuration has also passed the integration check, but the selected drone's propulsion and drag are still inherited.
+6. Open the editor with **F8** or its top-left button. Click **Apply GoPro Drone / edited geometry**. Apply installs the geometry, mass properties, motor balancing, and controller compensation together.
+7. Fly. The editor's **LIVE** message appears when the game applies forces through the modified motors; it confirms the mod is active, not real-world calibration.
+
+### Subsequent launches and updates
+
+Use **Launch Liftoff Geometry Lab.command** each time you want the mod. Setup is only needed for the initial installation or after updating the mod source. To rebuild an updated checkout using already-downloaded tools:
+
+```sh
+python3 tools/setup_mac.py --build-only
+```
+
+Quit and relaunch Liftoff to load the rebuilt plugin. If `.tools/` is missing (for example, you downloaded a fresh ZIP into a new folder), run setup without `--build-only`.
+
+**A drone reset returns to stock; click Apply again after each reset.** **Restore stock drone** returns the original geometry, mass properties, and controller. Press **F8** to hide the editor. With the editor open, **F9** applies and **F10** restores while stopped. Liftoff also uses F9 for its PID graph, so the on-screen Apply button avoids toggling that graph. On keyboards that use the top row for media controls, use **Fn/Globe + F8**, etc., as needed.
+
+To run without the mod, quit the game and launch Liftoff normally from Steam. No installed game files need to be removed.
+
+### Liftoff installed in another Steam library
+
+The scripts normally look for:
+
+```text
+~/Library/Application Support/Steam/steamapps/common/Liftoff/Liftoff.app
+```
+
+If Liftoff is elsewhere, replace `/path/to/Liftoff.app` below with its actual path. Run **both** setup and launch with that path:
 
 ```sh
 python3 tools/setup_mac.py --game "/path/to/Liftoff.app"
 python3 tools/launch_mac.py --game "/path/to/Liftoff.app"
 ```
 
-Rebuild after editing C# code with `python3 tools/setup_mac.py --build-only`. Quit and relaunch Liftoff to load the new plugin.
+The custom path is not saved by the double-click launchers. Keep using `--game` for later launches and rebuilds, for example:
+
+```sh
+python3 tools/setup_mac.py --build-only --game "/path/to/Liftoff.app"
+```
+
+### Installation troubleshooting
+
+| Message or symptom | What to do |
+| --- | --- |
+| `python3` missing or setup cannot start Python | Install Python 3 using the link above, reopen Terminal, and check `python3 --version`. |
+| Liftoff installation not found | Install the game through Steam, or supply its actual location with `--game` for both setup and launch. |
+| Local tools or plugin missing | Run setup without `--build-only` and wait for the success message. |
+| Rosetta required | Follow Apple's Rosetta instructions above, then retry the launcher. |
+| Liftoff already running | Quit the current game, then use the mod launcher. It cannot attach to an existing session. |
+| Steam is starting | Sign in, leave Steam open, and run the mod launcher again. |
+| Unverified/unsupported Liftoff build | This game assembly needs a new compatibility check. Keep the version guard enabled; reinstalling dependencies does not resolve this. |
+| Apply unavailable or asks you to stop | Enter single-player Free Flight with a supported ZetaFlight quad, reset it, and let it settle before applying. |
+| No editor in Free Flight | Press F8; if it is still absent, check the plugin log below and confirm you used the mod launcher. |
+| Pocket sticks do not respond | Confirm the top data port and USB Joystick mode, check Liftoff's calibration, and reload Free Flight after reconnecting. |
+
+For a setup failure, keep the error text in the setup Terminal window. For a launch failure, check `runtime/launcher.log` and `runtime/player.log`. Plugin status and physics checks are in `.tools/bepinex/BepInEx/LogOutput.log`. These paths are all inside `liftoff_mod`.
 
 ## Editing the drone
 
