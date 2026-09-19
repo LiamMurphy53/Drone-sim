@@ -15,7 +15,7 @@ This is a working development prototype, not a calibrated simulation of the fini
 
 Start with a regular quad, not the DJI FPV or a non-quad. The prototype checks for the inspected ZetaFlight controller and refuses unsupported builds. The overlay's **LIVE** status means the game's propeller force method has been called on the modified motors; it is not a certificate of real-world accuracy.
 
-Press F8 to hide the editor while flying. With the editor open, F9 applies and F10 restores stock (only while stopped). To run without the mod, quit the game and launch Liftoff normally from Steam. No installed game binaries or Steam launch settings are changed.
+Press F8 to hide the editor while flying. With the editor open, F9 applies and F10 restores stock (only while stopped). Liftoff also uses F9 for its PID graph display; use the on-screen Apply button to avoid toggling that display. To run without the mod, quit the game and launch Liftoff normally from Steam. No installed game binaries or Steam launch settings are changed.
 
 ## Fresh checkout
 
@@ -68,8 +68,9 @@ Validated during development:
 - Loaded in the Mac game and displayed the editor in Free Flight.
 - Applied the GoPro geometry to a loaded drone: mass changed from 0.795000 to 0.808819 kg; the CG, full inertia, and four motor positions changed. A subsequent reset returned stock values. World/local motor readback was within 0.1 mm in this test; the live guard allows 1 mm for large-map floating-point roundoff.
 - Called **Liftoff's actual `Propeller.ApplyControllerForceAtPropeller`** in an isolated Unity physics scene. At 1 N for 2 ms, a 100 mm lateral arm produced 0.050000 rad/s; a 200 mm arm produced 0.100000 rad/s. A forward arm gave the expected pitch sign and magnitude. No game drone or global simulation settings were changed by this test.
+- **Powered Free Flight smoke check, September 18, 2026:** launched the GitHub repository build with the RadioMaster Pocket connected. Liftoff detected `Radiomaster Pocket Joystick`; the user confirmed arming and flight, and the view showed the drone airborne. After the GoPro profile was applied, the plugin logged `Verified live Liftoff propeller-force calls using the custom motor positions.` A subsequent reset rebound the stock 0.795000 kg drone and its original mass properties. No geometry-guard errors were logged during this check.
 
-**Powered flight and controller handling are not yet verified.** The loaded drone remained disarmed during the application/reset check. Do not treat this as flight-validated until an armed session logs `Verified live Liftoff propeller-force calls` and its handling is tested. Automated mouse input was unreliable on this Mac; keyboard shortcuts are provided as a fallback.
+This confirms integration during powered flight; **it does not validate real-world handling accuracy**. A controlled stock-versus-GoPro comparison, saturation tests, and calibration against the real aircraft remain outstanding. Resets clear the override: reapply the profile before each GoPro test flight. Automated mouse input was unreliable on this Mac; keyboard shortcuts are provided as a fallback.
 
 Logs:
 
