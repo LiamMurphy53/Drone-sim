@@ -1,0 +1,9 @@
+.tools/
+runtime/
+bin/
+obj/
+dist/
+*.user
+Local.props
+__pycache__/
+*.pyc

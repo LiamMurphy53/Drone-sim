@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "name": "GoPro Drone",
+  "axes": "left_backward_up",
+  "massKg": 0.808819,
+  "centerOfMassM": [
+    2.1000000000000002e-05,
+    -0.00973,
+    0.044844
+  ],
+  "motorsM": [
+    0.106252,
+    -0.058089,
+    0.007,
+    -0.106252,
+    -0.058089,
+    0.007,
+    0.093252,
+    0.075381,
+    0.007,
+    -0.093252,
+    0.075381,
+    0.007
+  ],
+  "inertiaKgM2": [
+    0.0026390000000000003,
+    -1.7609960000000003e-06,
+    -3.127566e-06,
+    -1.7609960000000003e-06,
+    0.0030440000000000003,
+    0.00036346291400000003,
+    -3.127566e-06,
+    0.00036346291400000003,
+    0.004027
+  ],
+  "notes": "Geometry and mass properties imported from the original MATLAB/CAD model. Motor order FL, FR, RL, RR. Inertia is about the center of mass. Liftoff propulsion, drag, frame collisions and flight controller remain the selected stock setup. Geometry edits do not automatically recalculate mass properties."
+}

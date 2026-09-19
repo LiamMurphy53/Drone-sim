@@ -1,5 +1,6 @@
 # Drone Sim
 
+- **[liftoff_mod](liftoff_mod/README.md)** — experimental Mac Liftoff mod for the GoPro Drone's deadcat motor geometry, mass, CG, and inertia. Start with `liftoff_mod/Launch Liftoff Geometry Lab.command`; see its validation status and limitations before drawing design conclusions.
 - **[flight_sim](flight_sim/README.md)** — new native Mac flight simulator. RadioMaster Pocket USB input, Betaflight, and a 3D flying field. Start with `flight_sim/Launch Flight Sim.command`.
 - **[matlab_sim](matlab_sim/README.md)** — the original MATLAB geometry analysis and scripted 6DOF simulation. In MATLAB, change the current folder to `matlab_sim`, then run `run_all_simulations`.
 
